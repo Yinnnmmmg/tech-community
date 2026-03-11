@@ -1,4 +1,4 @@
-package com.ying.techcommunitycore.utils;
+package com.ying.tech.community.core.utils;
 
 import cn.hutool.json.JSONUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
