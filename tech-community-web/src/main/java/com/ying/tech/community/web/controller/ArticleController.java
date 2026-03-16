@@ -6,6 +6,7 @@ import com.ying.tech.community.service.article.req.ArticlePostReq;
 import com.ying.tech.community.service.article.service.ArticleDetailService;
 import com.ying.tech.community.service.article.service.ArticleService;
 import com.ying.tech.community.service.article.vo.ArticleDetailVO;
+import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,19 @@ public class ArticleController {
     private ArticleService articleService;
     @Autowired
     private ArticleDetailService articleDetailService;
+
+    /**
+     * 点赞接口
+     * POST /article/like
+     * param: articleId 文章ID  status 状态  1表示点赞，0表示取消点赞
+     *
+     * */
+    @PostMapping("/like")
+    public Result<ArticleLikeVO> likeArticle(@RequestParam Long articleId, @RequestParam Integer status) {
+        ArticleLikeVO articleLikeVO = articleService.likeArticle(articleId, status);
+        return Result.success(articleLikeVO);
+    }
+
 
     /**
      * 发布文章接口

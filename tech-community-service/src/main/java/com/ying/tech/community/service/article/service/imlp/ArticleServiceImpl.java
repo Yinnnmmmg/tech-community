@@ -2,9 +2,13 @@ package com.ying.tech.community.service.article.service.imlp;
 
 import cn.hutool.core.bean.BeanUtil;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.constants.RedisConstants;
+import com.ying.tech.community.core.exception.BusinessException;
+import com.ying.tech.community.core.exception.StatusEnum;
 import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.entity.ArticleDetailDO;
@@ -12,7 +16,10 @@ import com.ying.tech.community.service.article.repository.mapper.ArticleDetailMa
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.article.req.ArticlePostReq;
 import com.ying.tech.community.service.article.service.ArticleService;
+import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
+import com.ying.tech.community.service.user.entity.UserFootDO;
+import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -29,6 +36,8 @@ public class ArticleServiceImpl implements ArticleService {
     private ArticleMapper articleMapper;
     @Autowired
     private ArticleDetailMapper articleDetailMapper;
+    @Autowired
+    private UserFootMapper userFootMapper;
     @Autowired
     private RedisTemplate redisTemplate;
 
@@ -159,5 +168,93 @@ public class ArticleServiceImpl implements ArticleService {
         // 兜底处理：防止并发情况下瞬间失效
         if (total == null) total = 0L;
         return new PageResult<ArticleListVO>(total, finalVOs);
+    }
+
+    @Override
+    @Transactional
+    public ArticleLikeVO likeArticle(Long articleId, Integer status) {
+        //先在TheadLocal中获取当前用户ID
+        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        //获取文章作者id
+        ArticleDO article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new BusinessException(StatusEnum.PARAM_ILLEGAL); // 或对应的枚举
+        }
+
+        Long authorId = article.getUserId();
+        //根据文章id和用户id去查数据库，看有没有数据
+        QueryWrapper<UserFootDO> wrapper = new QueryWrapper<UserFootDO>()
+                .eq("article_id", articleId)
+                .eq("user_id", currentUserId);
+        UserFootDO userFootDO = userFootMapper.selectOne(wrapper);
+        if(userFootDO == null){
+            //第一次点赞必须是1
+            if(status != 1){
+                throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+            }
+            //没有数据，表示第一次点赞，插入一条数据，状态为1，文章的点赞数加一
+            userFootMapper.insert(UserFootDO
+                            .builder()
+                            .articleId(articleId)
+                            .userId(currentUserId)
+                            .articleUserId(authorId)
+                            .likeStat(1)
+                            .build()
+                    );
+            UpdateWrapper<ArticleDO> setLikeCountWrapper = new UpdateWrapper<ArticleDO>()
+                    .setSql("like_count = like_count+1")
+                    .eq("id", articleId);
+            articleMapper.update(setLikeCountWrapper);
+            return ArticleLikeVO.builder()
+                    .likeCount(articleMapper.selectById(articleId).getLikeCount())
+                    .likeStat(status)
+                    .build();
+        }
+        //有数据，先看是点赞还是取消点赞
+        //看数据库的原来点赞状态
+        Integer likeStat = userFootDO.getLikeStat();
+        if(status == 1){
+            //1、点赞，先查数据库看状态是不是0，如果是就把状态改为1，把文章的点赞数加一，
+            //   如果状态是1，就不做任何操作（防重发）
+            if(likeStat == 0){
+                UpdateWrapper<UserFootDO> setLikeStatWrapper = new UpdateWrapper<UserFootDO>()
+                        .setSql("like_stat = 1")
+                        .eq("article_id", articleId)
+                        .eq("user_id", currentUserId);
+                userFootMapper.update(setLikeStatWrapper);
+
+                UpdateWrapper<ArticleDO> setLikeCountWrapper = new UpdateWrapper<ArticleDO>()
+                        .setSql("like_count = like_count+1")
+                        .eq("id", articleId);
+                articleMapper.update(setLikeCountWrapper);
+            }
+
+        }
+        else if(status == 0){
+            //2、取消点赞，先查数据库看状态是不是1，如果是状态改为0，把文章的点赞数减一，
+            //   如果状态是0，就不做任何操作（防重发）
+            if(likeStat == 1){
+                UpdateWrapper<UserFootDO> setLikeStatWrapper = new UpdateWrapper<UserFootDO>()
+                        .setSql("like_stat = 0")
+                        .eq("article_id", articleId)
+                        .eq("user_id", currentUserId);
+                userFootMapper.update(setLikeStatWrapper);
+
+                UpdateWrapper<ArticleDO> setLikeCountWrapper = new UpdateWrapper<ArticleDO>()
+                        .setSql("like_count = like_count-1")
+                        .eq("id", articleId)
+                        .gt("like_count", 0);
+                articleMapper.update(setLikeCountWrapper);
+            }
+        }
+        else{
+            //3、其他情况，返回错误
+             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
+        return ArticleLikeVO
+                .builder()
+                .likeCount(articleMapper.selectById(articleId).getLikeCount())
+                .likeStat(status)
+                .build();
     }
 }

@@ -43,6 +43,10 @@ public class ArticleDO extends BaseDO implements Serializable {
 
     private Integer status;
 
+    private Integer viewCount;
+
+    private Integer likeCount;
+
     @TableLogic
     private Integer deleted;
 }
