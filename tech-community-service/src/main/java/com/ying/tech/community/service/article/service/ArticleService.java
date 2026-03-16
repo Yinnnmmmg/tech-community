@@ -5,12 +5,11 @@ import com.ying.tech.community.service.article.req.ArticlePostReq;
 import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 
-import java.util.List;
 
 public interface ArticleService {
     Long publishArticle(ArticlePostReq articlePostReq);
 
     PageResult<ArticleListVO> getArticleList(Integer pageNum, Integer pageSize);
 
-    ArticleLikeVO likeArticle(Long articleId, Integer status);
+    ArticleLikeVO likeArticle(Long articleId);
 }

@@ -78,7 +78,6 @@ public class ArticleServiceImpl implements ArticleService {
         //添加到redis
         redisTemplate.opsForValue().set(articleDetailKey,articleDetail);
         log.info("文章详情表插入redis成功，文章 ID: {}", article.getId());
-
         return article.getId();
     }
 
@@ -170,91 +169,41 @@ public class ArticleServiceImpl implements ArticleService {
         return new PageResult<ArticleListVO>(total, finalVOs);
     }
 
+    /**
+     * 用redis 实现点赞功能
+     * */
     @Override
-    @Transactional
-    public ArticleLikeVO likeArticle(Long articleId, Integer status) {
+    public ArticleLikeVO likeArticle(Long articleId) {
         //先在TheadLocal中获取当前用户ID
         Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
-        //获取文章作者id
-        ArticleDO article = articleMapper.selectById(articleId);
-        if (article == null) {
-            throw new BusinessException(StatusEnum.PARAM_ILLEGAL); // 或对应的枚举
-        }
-
-        Long authorId = article.getUserId();
-        //根据文章id和用户id去查数据库，看有没有数据
-        QueryWrapper<UserFootDO> wrapper = new QueryWrapper<UserFootDO>()
-                .eq("article_id", articleId)
-                .eq("user_id", currentUserId);
-        UserFootDO userFootDO = userFootMapper.selectOne(wrapper);
-        if(userFootDO == null){
-            //第一次点赞必须是1
-            if(status != 1){
-                throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
-            }
-            //没有数据，表示第一次点赞，插入一条数据，状态为1，文章的点赞数加一
-            userFootMapper.insert(UserFootDO
-                            .builder()
-                            .articleId(articleId)
-                            .userId(currentUserId)
-                            .articleUserId(authorId)
-                            .likeStat(1)
-                            .build()
-                    );
-            UpdateWrapper<ArticleDO> setLikeCountWrapper = new UpdateWrapper<ArticleDO>()
-                    .setSql("like_count = like_count+1")
-                    .eq("id", articleId);
-            articleMapper.update(setLikeCountWrapper);
-            return ArticleLikeVO.builder()
-                    .likeCount(articleMapper.selectById(articleId).getLikeCount())
-                    .likeStat(status)
-                    .build();
-        }
-        //有数据，先看是点赞还是取消点赞
-        //看数据库的原来点赞状态
-        Integer likeStat = userFootDO.getLikeStat();
-        if(status == 1){
-            //1、点赞，先查数据库看状态是不是0，如果是就把状态改为1，把文章的点赞数加一，
-            //   如果状态是1，就不做任何操作（防重发）
-            if(likeStat == 0){
-                UpdateWrapper<UserFootDO> setLikeStatWrapper = new UpdateWrapper<UserFootDO>()
-                        .setSql("like_stat = 1")
-                        .eq("article_id", articleId)
-                        .eq("user_id", currentUserId);
-                userFootMapper.update(setLikeStatWrapper);
-
-                UpdateWrapper<ArticleDO> setLikeCountWrapper = new UpdateWrapper<ArticleDO>()
-                        .setSql("like_count = like_count+1")
-                        .eq("id", articleId);
-                articleMapper.update(setLikeCountWrapper);
-            }
-
-        }
-        else if(status == 0){
-            //2、取消点赞，先查数据库看状态是不是1，如果是状态改为0，把文章的点赞数减一，
-            //   如果状态是0，就不做任何操作（防重发）
-            if(likeStat == 1){
-                UpdateWrapper<UserFootDO> setLikeStatWrapper = new UpdateWrapper<UserFootDO>()
-                        .setSql("like_stat = 0")
-                        .eq("article_id", articleId)
-                        .eq("user_id", currentUserId);
-                userFootMapper.update(setLikeStatWrapper);
-
-                UpdateWrapper<ArticleDO> setLikeCountWrapper = new UpdateWrapper<ArticleDO>()
-                        .setSql("like_count = like_count-1")
-                        .eq("id", articleId)
-                        .gt("like_count", 0);
-                articleMapper.update(setLikeCountWrapper);
+        //拼接 key
+        String likeKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIKE + articleId;
+        // 【核心兜底逻辑】：检查 Redis 中是否存在该 Key,预防redis宕机导致redis数据丢失，添加完这条点赞后点赞数变成了1
+        if (Boolean.FALSE.equals(redisTemplate.hasKey(likeKey))) {
+            // 如果 Redis 里没有，去 MySQL 的 user_foot 表查出这篇文章所有点过赞的 userId
+            // 通过文章id查出点过赞的 userId,,注意like_stat为0的不要算进去了
+            List<UserFootDO> userFootDOList = userFootMapper.selectList
+                                             (new QueryWrapper<UserFootDO>()
+                                                     .eq("article_id", articleId)
+                                                     .eq("like_stat", 1));
+            List<Long> likedUserIds = userFootDOList
+                                        .stream()
+                                        .map(userFootDO -> userFootDO.getUserId())
+                                        .collect(Collectors.toList());
+            if (likedUserIds != null && !likedUserIds.isEmpty()) {
+                // 把查出来的历史点赞用户，一次性塞进 Redis 里恢复现场
+                redisTemplate.opsForSet().add(likeKey, likedUserIds.toArray());
             }
         }
-        else{
-            //3、其他情况，返回错误
-             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        //添加到set中，返回1表示添加成功（点赞成功），
+        //返回0表示添加失败（已经点过赞了），所以是取消点赞，删除
+        Long addResult = redisTemplate.opsForSet().add(likeKey, currentUserId);
+        if(addResult == 0) {
+            redisTemplate.opsForSet().remove(likeKey, currentUserId);
         }
-        return ArticleLikeVO
-                .builder()
-                .likeCount(articleMapper.selectById(articleId).getLikeCount())
-                .likeStat(status)
+        return ArticleLikeVO.builder()
+                .likeCount(redisTemplate.opsForSet().size(likeKey))//总条数
+                .likeStat(addResult)
                 .build();
     }
 }

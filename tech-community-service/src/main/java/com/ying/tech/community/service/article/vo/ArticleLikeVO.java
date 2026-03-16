@@ -6,6 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class ArticleLikeVO {
-    private Integer likeCount;
-    private Integer likeStat;
+    private Long likeCount; // 点赞数
+    private Long likeStat;  // 点赞状态 0-未点赞 1-已点赞
 }

@@ -13,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 
 @Slf4j
 @RestController
@@ -27,12 +26,11 @@ public class ArticleController {
     /**
      * 点赞接口
      * POST /article/like
-     * param: articleId 文章ID  status 状态  1表示点赞，0表示取消点赞
-     *
+     * param: articleId 文章ID
      * */
     @PostMapping("/like")
-    public Result<ArticleLikeVO> likeArticle(@RequestParam Long articleId, @RequestParam Integer status) {
-        ArticleLikeVO articleLikeVO = articleService.likeArticle(articleId, status);
+    public Result<ArticleLikeVO> likeArticle(@RequestParam Long articleId) {
+        ArticleLikeVO articleLikeVO = articleService.likeArticle(articleId);
         return Result.success(articleLikeVO);
     }
 
