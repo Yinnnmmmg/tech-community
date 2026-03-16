@@ -32,6 +32,7 @@
         <pagehelper.version>1.4.7</pagehelper.version>
         <maven-site-plugin.version>3.12.1</maven-site-plugin.version>
         <maven-deploy-plugin.version>3.1.1</maven-deploy-plugin.version>
+        <redis.version>3.2.0</redis.version>
     </properties>
 
     <dependencyManagement>
@@ -70,6 +71,11 @@
                 <groupId>io.jsonwebtoken</groupId>
                 <artifactId>jjwt-jackson</artifactId>
                 <version>${jwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-data-redis</artifactId>
+                <version>${redis.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

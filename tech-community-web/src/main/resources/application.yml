@@ -4,6 +4,20 @@ spring:
     url: jdbc:mysql://localhost:3306/tech_community?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456 # 刚才在数据库工具里填的那个
+  # Redis 配置
+  data:
+    redis:
+      host: 192.168.44.167
+      port: 6379
+      password: 123456
+      database: 2
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: 100
 
 # MyBatis-Plus 配置
 mybatis-plus:
