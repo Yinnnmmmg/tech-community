@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -53,31 +54,30 @@ public class ArticleServiceImpl implements ArticleService {
         Long userId = ReqInfoContext.getReqInfo().getUserId();
         log.info("发布文章，当前用户 ID: {}", userId);
 
-        // 插入文章表到数据库
+        // 1. 插入文章主表
         ArticleDO article = new ArticleDO();
         BeanUtil.copyProperties(articlePostReq, article);
         article.setUserId(userId);
         articleMapper.insert(article);
         log.info("文章表插入数据库成功，文章 ID: {}", article.getId());
-        //添加到redis
-        //用Zset来存，为了按时间做排序
-        String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
-        redisTemplate.opsForZSet().add(articleListKey, article.getId().toString(), System.currentTimeMillis());
-        //正常存，方便根据id来查
-        String articleKey = RedisConstants.TECH_COMMUNITY_ARTICLE + article.getId();
-        redisTemplate.opsForValue().set(articleKey,article);
-        log.info("文章表插入redis成功，文章 ID: {}", article.getId());
 
-        // 插入文章细节表
+        // 2. 插入文章细节表
         ArticleDetailDO articleDetail = new ArticleDetailDO();
         BeanUtil.copyProperties(articlePostReq, articleDetail);
         articleDetail.setArticleId(article.getId());
         articleDetailMapper.insert(articleDetail);
-        log.info("文章详情表插入成功");
-        String articleDetailKey = RedisConstants.TECH_COMMUNITY_ARTICLE_DETAIL + articleDetail.getId();
-        //添加到redis
-        redisTemplate.opsForValue().set(articleDetailKey,articleDetail);
-        log.info("文章详情表插入redis成功，文章 ID: {}", article.getId());
+        log.info("文章详情表插入成功，详情 ID: {}", articleDetail.getId());
+
+        // 3. 维护文章时间轴索引 (ZSet) —— 极佳的设计！保留！
+        String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
+        redisTemplate.opsForZSet().add(articleListKey, article.getId().toString(), System.currentTimeMillis());
+        // 设置 ZSet 过期时间：文章列表追求高时效性，短过期时间 8 分钟
+        redisTemplate.expire(articleListKey, 8, TimeUnit.MINUTES);
+        log.info("文章 ID 已加入 Redis ZSet 时间轴排序列表");
+
+        // 注意：具体的主表和详情表实体数据不再主动 set 进 Redis
+        // 将装载具体内容缓存的任务，交给前端调用“查询文章详情”接口时去“懒加载”完成。
+
         return article.getId();
     }
 
@@ -144,6 +144,10 @@ public class ArticleServiceImpl implements ArticleService {
             // 性能优化：使用 multiSet 一次性批量写入缓存
             if (!redisBatchData.isEmpty()) {
                 redisTemplate.opsForValue().multiSet(redisBatchData);
+                // 为每个文章缓存设置过期时间：文章列表追求高时效性，短过期时间 8 分钟
+                for (String key : redisBatchData.keySet()) {
+                    redisTemplate.expire(key, 8, TimeUnit.MINUTES);
+                }
             }
         }
 
@@ -193,6 +197,8 @@ public class ArticleServiceImpl implements ArticleService {
             if (likedUserIds != null && !likedUserIds.isEmpty()) {
                 // 把查出来的历史点赞用户，一次性塞进 Redis 里恢复现场
                 redisTemplate.opsForSet().add(likeKey, likedUserIds.toArray());
+                // 设置点赞 key 的过期时间：长过期时间 30 天
+                redisTemplate.expire(likeKey, 30, TimeUnit.DAYS);
             }
         }
         //添加到set中，返回1表示添加成功（点赞成功），
@@ -201,6 +207,8 @@ public class ArticleServiceImpl implements ArticleService {
         if(addResult == 0) {
             redisTemplate.opsForSet().remove(likeKey, currentUserId);
         }
+        // 动态续期：每次点赞/取消点赞操作后刷新过期时间，长过期时间 30 天
+        redisTemplate.expire(likeKey, 30, TimeUnit.DAYS);
         //TODO 点赞关系数据先放在redis，后期改成mp实现异步单条落库
         return ArticleLikeVO.builder()
                 .likeCount(redisTemplate.opsForSet().size(likeKey))//总条数

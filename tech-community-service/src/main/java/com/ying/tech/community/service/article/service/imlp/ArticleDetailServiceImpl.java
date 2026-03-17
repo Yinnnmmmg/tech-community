@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -60,8 +61,11 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         }
         ArticleDetailVO articleDetailVO = new ArticleDetailVO();
         BeanUtil.copyProperties(articleDetailDO, articleDetailVO);
-        //重建缓存
-        redisTemplate.opsForValue().set(articleDetailKey, articleDetailDO);
+        //重建缓存，设置过期时间：基础1小时 + 0~10分钟随机波动，防御缓存雪崩
+        long baseMinutes = 60; // 1小时
+        long randomMinutes = ThreadLocalRandom.current().nextLong(0, 11); // 0~10分钟随机数
+        long expireMinutes = baseMinutes + randomMinutes;
+        redisTemplate.opsForValue().set(articleDetailKey, articleDetailDO, expireMinutes, TimeUnit.MINUTES);
         return articleDetailVO;
     }
 
@@ -85,11 +89,15 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         }
         try {
             redisTemplate.opsForValue().increment(viewCountKey);
+            // 动态续期：每次阅读量增加后刷新过期时间，长过期时间 30 天
+            redisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
         } catch (Exception e) {
             log.warn("阅读量 increment 失败，key: {}, 错误：{}", viewCountKey, e.getMessage());
             redisTemplate.delete(viewCountKey);
             redisTemplate.opsForValue().set(viewCountKey, 0L);
             redisTemplate.opsForValue().increment(viewCountKey);
+            // 异常恢复后也需要设置过期时间
+            redisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
         }
     }
 }
