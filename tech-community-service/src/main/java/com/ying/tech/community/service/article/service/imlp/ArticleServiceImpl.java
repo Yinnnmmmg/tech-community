@@ -201,6 +201,7 @@ public class ArticleServiceImpl implements ArticleService {
         if(addResult == 0) {
             redisTemplate.opsForSet().remove(likeKey, currentUserId);
         }
+        //TODO 点赞关系数据先放在redis，后期改成mp实现异步单条落库
         return ArticleLikeVO.builder()
                 .likeCount(redisTemplate.opsForSet().size(likeKey))//总条数
                 .likeStat(addResult)

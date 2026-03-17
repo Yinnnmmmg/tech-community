@@ -12,8 +12,6 @@
     <artifactId>tech-community-service</artifactId>
 
     <dependencies>
-
-
         <!--spring validation框架-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
