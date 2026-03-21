@@ -1,5 +1,6 @@
 package com.ying.tech.community.web.controller;
 
+import com.ying.tech.community.core.common.CursorPageResult;
 import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.service.article.req.ArticlePostReq;
@@ -51,9 +52,9 @@ public class ArticleController {
      * GET /article/list
      * */
     @GetMapping("/list")
-    public Result<PageResult<ArticleListVO>> articleList(@RequestParam(defaultValue = "1") Integer pageNum,
+    public Result<CursorPageResult<ArticleListVO>> articleList(@RequestParam(defaultValue = "1") Long cursor,
                                              @RequestParam(defaultValue = "10") Integer pageSize) {
-        PageResult<ArticleListVO> articlesPageResult = articleService.getArticleList(pageNum, pageSize);
+        CursorPageResult<ArticleListVO> articlesPageResult = articleService.getArticleList(cursor, pageSize);
         return Result.success(articlesPageResult);
     }
 
