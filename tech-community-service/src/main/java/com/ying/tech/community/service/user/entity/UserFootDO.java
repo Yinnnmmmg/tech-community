@@ -4,13 +4,14 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.ying.tech.community.service.entity.BaseDO;
-import lombok.Builder;
-import lombok.Data;
+import lombok.*;
 
 import java.io.Serializable;
 
 @Data
 @Builder
+@AllArgsConstructor(access = AccessLevel.PUBLIC)
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 @TableName("user_foot")
 public class UserFootDO extends BaseDO implements Serializable {
 
@@ -27,17 +28,17 @@ public class UserFootDO extends BaseDO implements Serializable {
     /**
      * 文档 ID
      */
-    private Long articleId;
+    private Long documentId;
 
     /**
      * 文档类型
      */
-    private Integer articleType;
+    private Integer documentType;
 
     /**
      * 文章作者的ID
      */
-    private Long articleUserId;
+    private Long documentUserId;
 
     /**
      * 收藏状态 (0 未收藏，1 已收藏)

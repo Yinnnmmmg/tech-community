@@ -12,6 +12,12 @@
     <artifactId>tech-community-service</artifactId>
 
     <dependencies>
+        <!--rabbit MQ-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!--spring validation框架-->
         <dependency>
             <groupId>org.springframework.boot</groupId>

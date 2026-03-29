@@ -3,13 +3,8 @@ package com.ying.tech.community.service.article.service.imlp;
 import cn.hutool.core.bean.BeanUtil;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ying.tech.community.core.common.CursorPageResult;
-import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.constants.RedisConstants;
-import com.ying.tech.community.core.exception.BusinessException;
-import com.ying.tech.community.core.exception.StatusEnum;
 import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.entity.ArticleDetailDO;
@@ -19,16 +14,26 @@ import com.ying.tech.community.service.article.req.ArticlePostReq;
 import com.ying.tech.community.service.article.service.ArticleService;
 import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
+import com.ying.tech.community.service.article.message.ArticlePublishMessage;
+import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
+import com.ying.tech.community.service.article.message.TimelineRebuildMessage;
 import com.ying.tech.community.service.user.entity.UserFootDO;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -44,6 +49,10 @@ public class ArticleServiceImpl implements ArticleService {
     private UserFootMapper userFootMapper;
     @Autowired
     private RedisTemplate redisTemplate;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+    @Autowired
+    private Executor taskExecutor;
 
     /**
      * 发布文章
@@ -71,16 +80,35 @@ public class ArticleServiceImpl implements ArticleService {
         articleDetailMapper.insert(articleDetail);
         log.info("文章详情表插入成功，详情 ID: {}", articleDetail.getId());
 
-        // 3. 维护文章时间轴索引 (ZSet)
-        String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
-        redisTemplate.opsForZSet().add(articleListKey, article.getId().toString(), System.currentTimeMillis());
-        // 不设置 ZSet 过期时间，数据持久化
-        // ZSet 瘦身，永远只保留最新的 5000 条数据，防止变成 Big Key
-        redisTemplate.opsForZSet().removeRange(articleListKey, 0, -5001);
-        log.info("文章 ID 已加入 Redis ZSet 时间轴排序列表");
+        // 3. 封装 MQ 消息 (获取当前绝对时间)
+        long currentTime = System.currentTimeMillis();
+        ArticlePublishMessage message = new ArticlePublishMessage(article.getId(), userId, currentTime);
+
+        // 4. 事务提交后，广播 MQ 消息
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // 新开线程异步发送消息，避免阻塞主程序
+                taskExecutor.execute(() -> {
+                    try {
+                        // messageId 同时用于：ConfirmCallback 旁路日志 + 消费者幂等拦截
+                        String messageId = UUID.randomUUID().toString();
+                        CorrelationData correlationData = new CorrelationData(messageId);
+                        // 通过 MessagePostProcessor 将 messageId 写入消息属性，消费者可读取用于幂等判断
+                        rabbitTemplate.convertAndSend("article.fanout", "", message, msg -> {
+                            msg.getMessageProperties().setMessageId(messageId);
+                            return msg;
+                        }, correlationData);
+                        log.info("事务提交成功，发文广播消息已发送，文章 ID: {}, messageId: {}", article.getId(), messageId);
+                    } catch (Exception e) {
+                        log.error("发文广播消息发送失败，文章 ID: {}, error: {}", article.getId(), e.getMessage(), e);
+                        // TODO: 可考虑将失败记录写入数据库，后续补偿处理
+                    }
+                });
+            }
+        });
         // 注意：具体的主表和详情表实体数据不再主动 set 进 Redis
         // 将装载具体内容缓存的任务，交给前端调用“查询文章详情”接口时去“懒加载”完成。
-
         return article.getId();
     }
 
@@ -132,11 +160,18 @@ public class ArticleServiceImpl implements ArticleService {
                 pageSize);
 
         // 降级：ZSet只保存最近的5000篇文章id，如果为空有两种情况
-        // 1、最近的文章已刷到底，或缓存丢失（生产环境可在此处补充 DB 游标查库兜底逻辑）
+        // 1、最近的文章已刷到底  2、缓存丢失（生产环境可在此处补充 DB 游标查库兜底逻辑）
         if (typedTuples == null || typedTuples.isEmpty()) {
-            ///TODO 最近的文章刷到底了，查数据库
-            ///TODO 缓存丢失，用MQ发送消息，异步重建ZSet
-            return new CursorPageResult<>(null, new ArrayList<>()); // nextCursor 为 null，告诉前端没数据了
+            // 检查 ZSet key 是否存在
+            Boolean hasKey = redisTemplate.hasKey(articleListKey);
+            if (Boolean.FALSE.equals(hasKey) || hasKey == null) {
+                // 缓存丢失，发送 MQ 消息通知异步重建 ZSet
+                log.warn("Redis ZSet 缓存丢失，发送 MQ 消息通知重建");
+                TimelineRebuildMessage rebuildMessage = new TimelineRebuildMessage(System.currentTimeMillis());
+                rabbitTemplate.convertAndSend("article.direct", "timeline.rebuild", rebuildMessage);
+            }
+            // 无论哪种情况，都从数据库查询文章列表返回
+            return queryArticleListFromDB(cursor, pageSize);
         }
 
         // 遍历 ZSet 结果，按返回顺序收集文章 ID；
@@ -222,7 +257,54 @@ public class ArticleServiceImpl implements ArticleService {
     }
 
     /**
-     * 用redis 实现点赞功能
+     * 从数据库游标分页查询文章列表（降级兜底方案）
+     *
+     * @param cursor   上一页最后一条记录的发布时间戳（毫秒），首次访问传 null 或 0
+     * @param pageSize 每页条数
+     * @return CursorPageResult，包含本页数据列表和下一页游标
+     */
+    private CursorPageResult<ArticleListVO> queryArticleListFromDB(Long cursor, Integer pageSize) {
+        log.info("从数据库查询文章列表，cursor: {}, pageSize: {}", cursor, pageSize);
+
+        // 根据 cursor 构建查询条件：createTime < cursor
+        QueryWrapper<ArticleDO> queryWrapper = new QueryWrapper<>();
+        queryWrapper.orderByDesc("create_time")
+                .last("LIMIT " + pageSize);
+
+        // 如果 cursor 存在，添加时间条件
+        if (cursor != null && cursor > 0) {
+            // cursor 是毫秒时间戳，需要转换为 LocalDateTime
+            LocalDateTime cursorTime = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(cursor), java.time.ZoneId.systemDefault());
+            queryWrapper.lt("create_time", cursorTime);
+        }
+
+        List<ArticleDO> articleDOList = articleMapper.selectList(queryWrapper);
+
+        // 转换为 VO
+        List<ArticleListVO> voList = articleDOList.stream()
+                .map(articleDO -> BeanUtil.copyProperties(articleDO, ArticleListVO.class))
+                .collect(Collectors.toList());
+
+        // 计算下一页游标：取最后一条的 createTime（转换为毫秒时间戳）
+        Long nextCursor = null;
+        if (!voList.isEmpty()) {
+            ArticleDO lastArticle = articleDOList.get(articleDOList.size() - 1);
+            LocalDateTime createTime = lastArticle.getCreateTime();
+            if (createTime != null) {
+                nextCursor = createTime.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+            }
+        }
+
+        // 如果返回数量不足 pageSize，说明已到末页
+        if (voList.size() < pageSize) {
+            nextCursor = null;
+        }
+
+        return new CursorPageResult<>(nextCursor, voList);
+    }
+
+    /**
+     * 用redis 实现文章点赞功能
      * */
     @Override
     public ArticleLikeVO likeArticle(Long articleId) {
@@ -251,9 +333,6 @@ public class ArticleServiceImpl implements ArticleService {
         }
         //添加到set中，返回1表示添加成功（点赞成功），
         //返回0表示添加失败（已经点过赞了），所以是取消点赞，删除
-        //TODO  存在并发竞态 Bug
-        // 场景复现：同一用户同时发出两个点赞请求（如快速双击）：
-        // 结果：用户点赞成功，但被并发请求意外取消。add 和 remove 这两步不是原子操作，必须用 Lua 脚本将 SISMEMBER + SADD/SREM 合并为一个原子操作。
         Long addResult = redisTemplate.opsForSet().add(likeKey, currentUserId);
         Long likeStat = addResult;
         if(Long.valueOf(0).equals(addResult)) {
@@ -261,7 +340,29 @@ public class ArticleServiceImpl implements ArticleService {
         }
         // 动态续期：每次点赞/取消点赞操作后刷新过期时间，长过期时间 30 天
         redisTemplate.expire(likeKey, 30, TimeUnit.DAYS);
-        //TODO 点赞关系数据先放在redis，后期改成mp实现异步单条落库
+        //点赞关系数据用MQ实现异步单条落库
+        RedisLikeToDBMessage redisLikeToDBMessage = RedisLikeToDBMessage.builder()
+                .userId(currentUserId)
+                .documentId(articleId)
+                .readStat(1)
+                .likeStat(likeStat.intValue())
+                .build();
+        taskExecutor.execute(() ->{
+            try {
+                String message = UUID.randomUUID().toString();
+                CorrelationData correlationData = new CorrelationData(message);
+                rabbitTemplate.convertAndSend("article.direct","article.like",redisLikeToDBMessage
+                        ,msg -> {msg.getMessageProperties().setCorrelationId(message);
+                                 return msg;
+                },correlationData);
+                log.info("发送点赞消息成功，消息ID：{}",message);
+            } catch (Exception e) {
+                log.error("发送点赞消息失败，articleId: {}, userId: {}, error: {}", articleId, currentUserId, e.getMessage(), e);
+                // TODO: 可考虑添加重试机制或将失败记录写入数据库，后续补偿处理
+                // 注意：此时 Redis 已更新，但 DB 未更新，存在数据不一致风险
+            }
+        });
+
         return ArticleLikeVO.builder()
                 .likeCount(redisTemplate.opsForSet().size(likeKey))//总条数
                 .likeStat(likeStat)

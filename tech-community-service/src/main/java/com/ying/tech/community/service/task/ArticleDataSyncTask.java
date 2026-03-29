@@ -24,10 +24,9 @@ public class ArticleDataSyncTask {
         this.articleMapper = articleMapper;
     }
 
-    @Scheduled(cron = "0 0 0/1 * * ?")//每1小时执行一次把redis的点赞量和浏览量同步到mysql
+    @Scheduled(cron = "0 0 0/1 * * ?")//每1小时执行一次把redis的浏览量同步到mysql
     public void syncArticleDataToMYSQL() {
         log.info("开始执行 Redis 到 MySQL 的文章数据同步任务...");
-        syncLikeCount();
         syncViewCount();
         log.info("文章数据同步任务执行完毕");
     }
@@ -58,31 +57,5 @@ public class ArticleDataSyncTask {
             }
         }
 
-    }
-
-    private void syncLikeCount(){
-        String likeKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIKE;
-        //模糊匹配所有 key
-        Set<String> keys = redisTemplate.keys(likeKey + "*");
-        if(keys == null || keys.isEmpty()){
-            return;
-        }
-        for (String key : keys) {
-            try{
-                //获取点赞量
-                String articleIdStr = key.substring(key.lastIndexOf(":") + 1);
-                Long articleId = Long.parseLong(articleIdStr);
-                Long likeCount = redisTemplate.opsForSet().size(key);
-                if(likeCount != null){
-                    //写入 mysql
-                    UpdateWrapper<ArticleDO> articleDOUpdateWrapper = new UpdateWrapper<ArticleDO>()
-                            .set("like_count",likeCount)
-                            .eq("id",articleId);
-                    articleMapper.update(null,articleDOUpdateWrapper);
-                }
-            } catch (Exception e){
-                log.error("文章点赞数据同步任务执行异常，key: {}, 错误：{}", key, e.getMessage());
-            }
-        }
     }
 }

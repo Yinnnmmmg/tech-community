@@ -18,6 +18,35 @@ spring:
           max-idle: 8
           min-idle: 0
           max-wait: 100
+  #rabbitMQ 配置
+  rabbitmq:
+    host: 192.168.44.167
+    port: 5672
+    virtual-host: /tech-community
+    username: root
+    password: 123456
+    connection-timeout: 1s
+    template:
+      retry:
+        enabled: true
+        initial-interval: 1000ms
+        multiplier: 1
+        max-attempts: 3
+      mandatory: true
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000ms
+          multiplier: 2.0
+          max-interval: 10000ms
+
+
 
 # MyBatis-Plus 配置
 mybatis-plus:
