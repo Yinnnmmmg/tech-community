@@ -15,5 +15,4 @@ public class TechCommunityWebApplication {
     public static void main(String[] args) {
         SpringApplication.run(TechCommunityWebApplication.class, args);
     }
-
 }

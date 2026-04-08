@@ -49,17 +49,26 @@ public class RabbitMQConfig {
 
     // ===================== 主队列 =====================
     public static final String ARTICLE_PUBLISH_QUEUE    = "article.publish.queue";
+    public static final String ARTICLE_PUBLISH_TIMELINE_QUEUE = "article.publish.timeline.queue";
+    public static final String ARTICLE_PUBLISH_NOTIFY_QUEUE = "article.publish.notify.queue";
+    public static final String ARTICLE_PUBLISH_ES_QUEUE = "article.publish.es.queue";
     public static final String TIMELINE_REBUILD_QUEUE   = "timeline.rebuild.queue";
     public static final String ARTICLE_LIKE_QUEUE  = "article.like.queue";
 
     // ===================== 死信队列 =====================
     public static final String ARTICLE_PUBLISH_DLQ      = "article.publish.dlq";
+    public static final String ARTICLE_PUBLISH_TIMELINE_DLQ = "article.publish.timeline.dlq";
+    public static final String ARTICLE_PUBLISH_NOTIFY_DLQ = "article.publish.notify.dlq";
+    public static final String ARTICLE_PUBLISH_ES_DLQ = "article.publish.es.dlq";
     public static final String TIMELINE_REBUILD_DLQ     = "timeline.rebuild.dlq";
     public static final String ARTICLE_LIKE_DLQ      = "article.like.dlq";
 
     // ===================== 路由键 =====================
     public static final String TIMELINE_REBUILD_KEY     = "timeline.rebuild";
     private static final String ARTICLE_PUBLISH_DEAD_KEY  = "article.publish.dead";
+    private static final String ARTICLE_PUBLISH_TIMELINE_DEAD_KEY = "article.publish.timeline.dead";
+    private static final String ARTICLE_PUBLISH_NOTIFY_DEAD_KEY = "article.publish.notify.dead";
+    private static final String ARTICLE_PUBLISH_ES_DEAD_KEY = "article.publish.es.dead";
     private static final String TIMELINE_REBUILD_DEAD_KEY = "timeline.rebuild.dead";
     private static final String ARTICLE_LIKE_DEAD_KEY  = "article.like.dead";
     private static final String ARTICLE_LIKE_KEY  = "article.like";
@@ -134,6 +143,30 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public Queue articlePublishTimelineQueue() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_TIMELINE_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_PUBLISH_TIMELINE_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue articlePublishNotifyQueue() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_NOTIFY_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_PUBLISH_NOTIFY_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue articlePublishEsQueue() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_ES_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_PUBLISH_ES_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
     public Queue timelineRebuildQueue() {
         return QueueBuilder.durable(TIMELINE_REBUILD_QUEUE)
                 .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
@@ -158,6 +191,21 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public Queue articlePublishTimelineDlq() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_TIMELINE_DLQ).build();
+    }
+
+    @Bean
+    public Queue articlePublishNotifyDlq() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_NOTIFY_DLQ).build();
+    }
+
+    @Bean
+    public Queue articlePublishEsDlq() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_ES_DLQ).build();
+    }
+
+    @Bean
     public Queue timelineRebuildDlq() {
         return QueueBuilder.durable(TIMELINE_REBUILD_DLQ).build();
     }
@@ -174,6 +222,24 @@ public class RabbitMQConfig {
     public Binding articlePublishBinding(Queue articlePublishQueue,
                                           FanoutExchange articleFanoutExchange) {
         return BindingBuilder.bind(articlePublishQueue).to(articleFanoutExchange);
+    }
+
+    @Bean
+    public Binding articlePublishTimelineBinding(Queue articlePublishTimelineQueue,
+                                                 FanoutExchange articleFanoutExchange) {
+        return BindingBuilder.bind(articlePublishTimelineQueue).to(articleFanoutExchange);
+    }
+
+    @Bean
+    public Binding articlePublishNotifyBinding(Queue articlePublishNotifyQueue,
+                                               FanoutExchange articleFanoutExchange) {
+        return BindingBuilder.bind(articlePublishNotifyQueue).to(articleFanoutExchange);
+    }
+
+    @Bean
+    public Binding articlePublishEsBinding(Queue articlePublishEsQueue,
+                                           FanoutExchange articleFanoutExchange) {
+        return BindingBuilder.bind(articlePublishEsQueue).to(articleFanoutExchange);
     }
 
     @Bean
@@ -204,8 +270,32 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public Binding articlePublishTimelineDlqBinding(Queue articlePublishTimelineDlq,
+                                                    DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articlePublishTimelineDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_PUBLISH_TIMELINE_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding articlePublishNotifyDlqBinding(Queue articlePublishNotifyDlq,
+                                                  DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articlePublishNotifyDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_PUBLISH_NOTIFY_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding articlePublishEsDlqBinding(Queue articlePublishEsDlq,
+                                              DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articlePublishEsDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_PUBLISH_ES_DEAD_KEY);
+    }
+
+    @Bean
     public Binding timelineRebuildDlqBinding(Queue timelineRebuildDlq,
-                                               DirectExchange articleDlxExchange) {
+                                                DirectExchange articleDlxExchange) {
         return BindingBuilder.bind(timelineRebuildDlq)
                 .to(articleDlxExchange)
                 .with(TIMELINE_REBUILD_DEAD_KEY);

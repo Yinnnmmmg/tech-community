@@ -1,4 +1,4 @@
-package com.ying.tech.community.service.article.service.imlp;
+package com.ying.tech.community.service.article.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;

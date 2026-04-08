@@ -34,8 +34,8 @@ public class ArticleDeadLetterConsumer {
      */
     @RabbitListener(queues = "article.publish.dlq" , containerFactory = "autoAckListenerContainerFactory")
     public void handleArticlePublishDead(ArticlePublishMessage message,
-                                          Channel channel,
-                                          @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+                                           Channel channel,
+                                           @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
             throws IOException {
 
         log.error("[DLQ][ArticlePublish] 消息进入死信队列，articleId: {}, authorId: {}, publishTime: {}",
@@ -46,6 +46,36 @@ public class ArticleDeadLetterConsumer {
         //   2. 写入补偿任务表，由定时任务定期重试
         //   3. 直接降级：同步写入 ZSet 并插入系统通知
 
+        channel.basicAck(deliveryTag, false);
+    }
+
+    @RabbitListener(queues = "article.publish.timeline.dlq", containerFactory = "autoAckListenerContainerFactory")
+    public void handleArticlePublishTimelineDead(ArticlePublishMessage message,
+                                                 Channel channel,
+                                                 @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+            throws IOException {
+        log.error("[DLQ][ArticlePublishTimeline] message in dlq, articleId: {}, authorId: {}, publishTime: {}",
+            message.getArticleId(), message.getAuthorId(), message.getPublishTime());
+        channel.basicAck(deliveryTag, false);
+    }
+
+    @RabbitListener(queues = "article.publish.notify.dlq", containerFactory = "autoAckListenerContainerFactory")
+    public void handleArticlePublishNotifyDead(ArticlePublishMessage message,
+                                               Channel channel,
+                                               @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+            throws IOException {
+        log.error("[DLQ][ArticlePublishNotify] message in dlq, articleId: {}, authorId: {}, publishTime: {}",
+            message.getArticleId(), message.getAuthorId(), message.getPublishTime());
+        channel.basicAck(deliveryTag, false);
+    }
+
+    @RabbitListener(queues = "article.publish.es.dlq", containerFactory = "autoAckListenerContainerFactory")
+    public void handleArticlePublishEsDead(ArticlePublishMessage message,
+                                           Channel channel,
+                                           @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+            throws IOException {
+        log.error("[DLQ][ArticlePublishES] message in dlq, articleId: {}, authorId: {}, publishTime: {}",
+            message.getArticleId(), message.getAuthorId(), message.getPublishTime());
         channel.basicAck(deliveryTag, false);
     }
 

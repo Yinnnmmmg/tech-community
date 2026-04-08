@@ -48,6 +48,16 @@ spring:
 
 
 
+# Elasticsearch 配置
+elasticsearch:
+  host: 192.168.44.167
+  port: 9200
+  scheme: http  # 由于是关闭安全认证，使用http
+  # 连接池配置
+  connection-timeout: 10s
+  socket-timeout: 30s
+  connection-request-timeout: 5s
+
 # MyBatis-Plus 配置
 mybatis-plus:
   configuration:

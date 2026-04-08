@@ -4,7 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ying.tech.community.core.constants.NotifyMsgConstants;
 import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.notifyMsg.entity.NotifyMsgDO;
-import com.ying.tech.community.service.notifyMsg.mapper.NotifyMsgMapper;
+
+import com.ying.tech.community.service.notifyMsg.repository.mapper.NotifyMsgMapper;
 import com.ying.tech.community.service.notifyMsg.service.NotifyMsgService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

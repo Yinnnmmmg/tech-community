@@ -1,4 +1,4 @@
-package com.ying.tech.community.service.article.service.imlp;
+package com.ying.tech.community.service.article.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 
@@ -25,7 +25,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
