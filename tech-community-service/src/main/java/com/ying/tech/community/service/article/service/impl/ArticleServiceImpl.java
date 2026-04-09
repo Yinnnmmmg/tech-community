@@ -317,7 +317,7 @@ public class ArticleServiceImpl implements ArticleService {
             // 通过文章id查出点过赞的 userId,,注意like_stat为0的不要算进去了
             List<UserFootDO> userFootDOList = userFootMapper.selectList
                                              (new QueryWrapper<UserFootDO>()
-                                                     .eq("article_id", articleId)
+                                                     .eq("document_id", articleId)
                                                      .eq("like_stat", 1));
             List<Long> likedUserIds = userFootDOList
                                         .stream()

@@ -14,6 +14,7 @@ import com.ying.tech.community.service.article.vo.ArticleDetailVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.ThreadLocalRandom;
@@ -29,7 +30,9 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     @Autowired
     private ArticleDetailMapper articleDetailMapper;
     @Autowired
-    private RedisTemplate redisTemplate;
+    private RedisTemplate<String, Object> redisTemplate;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
 
     // 分段锁数组：固定 256 个锁，通过 articleId 取模选锁，彻底避免内存泄漏
     private static final int LOCK_SEGMENT_COUNT = 256;
@@ -120,7 +123,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     private void safeIncrementViewCount(Long articleId) {
         // 【核心兜底逻辑】：检查 Redis 中是否有这个阅读量 Key
         String viewCountKey = RedisConstants.TECH_COMMUNITY_ARTICLE_VIEW_COUNT + articleId;
-        if (Boolean.FALSE.equals(redisTemplate.hasKey(viewCountKey))) {
+        if (Boolean.FALSE.equals(stringRedisTemplate.hasKey(viewCountKey))) {
             // 1. 如果没有，去 MySQL 查出真实的历史阅读量
             ArticleDO article = articleMapper.selectById(articleId);
             Long dbViewCount = (article != null && article.getViewCount() != null) ? article.getViewCount() : 0L;
@@ -129,12 +132,12 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             // 【架构细节】：使用 setIfAbsent 而不是 set。
             // 如果极端情况下有100个人同时在Redis没数据时点进文章，只有一个线程能设置成功，其他线程会被挡住，防止旧数据覆盖。
             // 同时顺手设置 30 天的过期时间，防止冷数据永远占用内存。
-            redisTemplate.opsForValue().setIfAbsent(viewCountKey, String.valueOf(dbViewCount), 30, TimeUnit.DAYS);
+            stringRedisTemplate.opsForValue().setIfAbsent(viewCountKey, String.valueOf(dbViewCount), 30, TimeUnit.DAYS);
         }
         try {
-            redisTemplate.opsForValue().increment(viewCountKey);
+            stringRedisTemplate.opsForValue().increment(viewCountKey);
             // 动态续期：每次阅读量增加后刷新过期时间，长过期时间 30 天
-            redisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
+            stringRedisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
         } catch (Exception e) {
             log.warn("increment失败，回源DB: {}", viewCountKey, e);
 
@@ -145,13 +148,13 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             ArticleDO article = articleMapper.selectOne(articleWrapper);
             long dbCount = (article != null && article.getViewCount() != null) ? article.getViewCount() : 0L;
             // 2. 回填Redis（必须用 String，保证 Redis INCR 可以正常执行）
-            redisTemplate.opsForValue().set(viewCountKey, String.valueOf(dbCount));
+            stringRedisTemplate.opsForValue().set(viewCountKey, String.valueOf(dbCount));
 
             // 3. 再自增
-            redisTemplate.opsForValue().increment(viewCountKey);
+            stringRedisTemplate.opsForValue().increment(viewCountKey);
 
             // 4. 设置过期时间
-            redisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
+            stringRedisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
         }
     }
 

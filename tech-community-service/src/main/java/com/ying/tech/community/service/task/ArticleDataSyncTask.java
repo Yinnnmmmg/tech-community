@@ -5,8 +5,7 @@ import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -16,46 +15,45 @@ import java.util.Set;
 @Slf4j
 public class ArticleDataSyncTask {
 
-    private final RedisTemplate redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
     private final ArticleMapper articleMapper;
 
-    public ArticleDataSyncTask(RedisTemplate redisTemplate, ArticleMapper articleMapper) {
-        this.redisTemplate = redisTemplate;
+    public ArticleDataSyncTask(StringRedisTemplate stringRedisTemplate, ArticleMapper articleMapper) {
+        this.stringRedisTemplate = stringRedisTemplate;
         this.articleMapper = articleMapper;
     }
 
-    @Scheduled(cron = "0 0 0/1 * * ?")//每1小时执行一次把redis的浏览量同步到mysql
+    @Scheduled(cron = "0 0 0/1 * * ?")
     public void syncArticleDataToMYSQL() {
         log.info("开始执行 Redis 到 MySQL 的文章数据同步任务...");
         syncViewCount();
         log.info("文章数据同步任务执行完毕");
     }
 
-    private void syncViewCount(){
+    private void syncViewCount() {
         String viewKey = RedisConstants.TECH_COMMUNITY_ARTICLE_VIEW_COUNT;
-        //模糊匹配所有key
-        Set<String> keys = redisTemplate.keys(viewKey + "*");
-        if(keys == null || keys.isEmpty()){
+        Set<String> keys = stringRedisTemplate.keys(viewKey + "*");
+        if (keys == null || keys.isEmpty()) {
             return;
         }
+
         for (String key : keys) {
-            try{
-                //获取阅读量
+            try {
                 String articleIdStr = key.substring(key.lastIndexOf(":") + 1);
                 Long articleId = Long.parseLong(articleIdStr);
-                Object viewCountObj = redisTemplate.opsForValue().get(key);
-                if(viewCountObj != null){
-                    //写入mysql
-                    long viewCount = Long.parseLong(viewCountObj.toString());
-                    UpdateWrapper<ArticleDO> articleDOUpdateWrapper = new UpdateWrapper<ArticleDO>()
-                            .set("view_count",viewCount)
-                            .eq("id",articleId);
-                    articleMapper.update(null,articleDOUpdateWrapper);
+                String viewCount = stringRedisTemplate.opsForValue().get(key);
+                if (viewCount == null) {
+                    continue;
                 }
-            } catch (Exception e){
-                log.error("文章数据同步任务执行异常，key: {}, 错误：{}", key, e.getMessage());
+
+                long parsedViewCount = Long.parseLong(viewCount);
+                UpdateWrapper<ArticleDO> articleDOUpdateWrapper = new UpdateWrapper<ArticleDO>()
+                        .set("view_count", parsedViewCount)
+                        .eq("id", articleId);
+                articleMapper.update(null, articleDOUpdateWrapper);
+            } catch (Exception e) {
+                log.error("文章数据同步任务执行异常，key: {}, error: {}", key, e.getMessage());
             }
         }
-
     }
 }
