@@ -45,6 +45,14 @@ spring:
           initial-interval: 2000ms
           multiplier: 2.0
           max-interval: 10000ms
+  ai:
+    deepseek:
+      api-key: sk-bc7cacd61c324b148bf55f923974e0a3
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.3
+          max-tokens: 10240
 
 
 
