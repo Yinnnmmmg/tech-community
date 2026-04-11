@@ -35,3 +35,6 @@ build/
 *.log
 logs/
 .DS_Store
+
+### 环境配置文件（包含敏感信息）###
+**/application-dev.yml

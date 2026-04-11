@@ -47,7 +47,7 @@ public class ArticleServiceImpl implements ArticleService {
     @Autowired
     private UserFootMapper userFootMapper;
     @Autowired
-    private RedisTemplate redisTemplate;
+    private RedisTemplate<String, Object> redisTemplate;
     @Autowired
     private RabbitTemplate rabbitTemplate;
     @Autowired
@@ -151,7 +151,7 @@ public class ArticleServiceImpl implements ArticleService {
         // 首次请求 maxScore 取当前时间；翻页时取 cursor-1，跳过上一页最后一条，避免重复
         String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
         long maxScore = (cursor == null || cursor <= 0) ? System.currentTimeMillis() : cursor-1;
-        Set<ZSetOperations.TypedTuple<String>> typedTuples = redisTemplate.opsForZSet().reverseRangeByScoreWithScores(
+        Set<ZSetOperations.TypedTuple<Object>> typedTuples = redisTemplate.opsForZSet().reverseRangeByScoreWithScores(
                 articleListKey,
                 0,
                 maxScore,
@@ -177,8 +177,8 @@ public class ArticleServiceImpl implements ArticleService {
         // 遍历结束后 nextCursor 停在最后一条（score 最小，即最旧）的时间戳，作为下一页游标
         ArrayList<String> orderedIds = new ArrayList<>();
         Long nextCursor = null;
-        for (ZSetOperations.TypedTuple<String> typedTuple : typedTuples) {
-            orderedIds.add(typedTuple.getValue());
+        for (ZSetOperations.TypedTuple<Object> typedTuple : typedTuples) {
+            orderedIds.add((String) typedTuple.getValue());
             nextCursor = typedTuple.getScore().longValue();
         }
 
@@ -352,6 +352,8 @@ public class ArticleServiceImpl implements ArticleService {
                 CorrelationData correlationData = new CorrelationData(message);
                 rabbitTemplate.convertAndSend("article.direct","article.like",redisLikeToDBMessage
                         ,msg -> {msg.getMessageProperties().setCorrelationId(message);
+                                 // MOD: set AMQP messageId so consumer idempotency can use it first.
+                                 msg.getMessageProperties().setMessageId(message);
                                  return msg;
                 },correlationData);
                 log.info("发送点赞消息成功，消息ID：{}",message);

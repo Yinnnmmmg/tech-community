@@ -27,9 +27,11 @@ public class NotifyMsgServiceImpl implements NotifyMsgService {
                 .select("msg")
                 .eq("notify_user_id", userId)
                 .eq("type", NotifyMsgConstants.Type.SYSTEM);
-        List<String> msgList = notifyMsgMapper.selectList(wrapper)
+        
+        // 使用 selectMaps 只获取指定字段，避免类型映射问题
+        List<String> msgList = notifyMsgMapper.selectMaps(wrapper)
                 .stream()
-                .map(NotifyMsgDO::getMsg)
+                .map(m -> (String) m.get("msg"))
                 .collect(Collectors.toList());
         return msgList;
     }

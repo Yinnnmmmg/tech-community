@@ -1,16 +1,17 @@
-spring:
+﻿spring:
+  profiles:
+    active: dev
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/tech_community?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
-    username: root
-    password: 123456 # 刚才在数据库工具里填的那个
-  # Redis 配置
+    url: ${app.secure.datasource.url}
+    username: ${app.secure.datasource.username}
+    password: ${app.secure.datasource.password}
   data:
     redis:
-      host: 192.168.44.167
-      port: 6379
-      password: 123456
-      database: 2
+      host: ${app.secure.redis.host}
+      port: ${app.secure.redis.port}
+      password: ${app.secure.redis.password}
+      database: ${app.secure.redis.database}
       timeout: 2000ms
       lettuce:
         pool:
@@ -18,13 +19,12 @@ spring:
           max-idle: 8
           min-idle: 0
           max-wait: 100
-  #rabbitMQ 配置
   rabbitmq:
-    host: 192.168.44.167
-    port: 5672
-    virtual-host: /tech-community
-    username: root
-    password: 123456
+    host: ${app.secure.rabbitmq.host}
+    port: ${app.secure.rabbitmq.port}
+    virtual-host: ${app.secure.rabbitmq.virtual-host}
+    username: ${app.secure.rabbitmq.username}
+    password: ${app.secure.rabbitmq.password}
     connection-timeout: 1s
     template:
       retry:
@@ -47,29 +47,40 @@ spring:
           max-interval: 10000ms
   ai:
     deepseek:
-      api-key: sk-bc7cacd61c324b148bf55f923974e0a3
+      api-key: ${app.secure.ai.deepseek.api-key}
       chat:
+      embedding:
+        enabled: false
         options:
           model: deepseek-chat
           temperature: 0.3
-          max-tokens: 10240
+          max-tokens: 1024
+    openai:
+      base-url: ${app.secure.ai.openai.base-url}
+      api-key: ${app.secure.ai.openai.api-key}
+      embedding:
+        enabled: true
+        options:
+          model: text-embedding-v4
+
+    vectorstore:
+      qdrant:
+        host: ${app.secure.ai.vectorstore.qdrant.host}
+        port: ${app.secure.ai.vectorstore.qdrant.port}
+        collection-name: vector_store
 
 
-
-# Elasticsearch 配置
 elasticsearch:
-  host: 192.168.44.167
-  port: 9200
-  scheme: http  # 由于是关闭安全认证，使用http
-  # 连接池配置
+  host: ${app.secure.elasticsearch.host}
+  port: ${app.secure.elasticsearch.port}
+  scheme: ${app.secure.elasticsearch.scheme}
   connection-timeout: 10s
   socket-timeout: 30s
   connection-request-timeout: 5s
 
-# MyBatis-Plus 配置
 mybatis-plus:
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # 开启 SQL 日志打印，方便调试
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
-      logic-delete-field: deleted # 对应数据库里的逻辑删除字段
+      logic-delete-field: deleted
