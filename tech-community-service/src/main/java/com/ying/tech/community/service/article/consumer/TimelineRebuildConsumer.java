@@ -1,6 +1,7 @@
 package com.ying.tech.community.service.article.consumer;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.ying.tech.community.core.constants.ArticleStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.message.TimelineRebuildMessage;
@@ -17,15 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Redis ZSet 时间轴重建消费者
- *
- * <p>消费队列：timeline.rebuild.queue（绑定到 article.direct，routingKey=timeline.rebuild）
- *
- * <p>触发时机：{@code getArticleList} 检测到 ZSet Key 不存在（缓存丢失）时发送消息
- *
- * <p>重建策略：从 MySQL 查最近 5000 篇文章，按 createTime 毫秒时间戳作为 score 批量写入 ZSet
- *
- * <p>消息策略：Auto ACK + 失败丢弃（非关键业务，允许偶尔失败）
+ * Rebuilds article timeline ZSet in Redis when cache is missing.
  */
 @Slf4j
 @Component
@@ -39,19 +32,19 @@ public class TimelineRebuildConsumer {
 
     @RabbitListener(queues = "timeline.rebuild.queue", containerFactory = "autoAckListenerContainerFactory")
     public void handleTimelineRebuild(TimelineRebuildMessage message) {
-        log.info("[TimelineRebuild] 收到重建消息, rebuildTime: {}", message.getRebuildTime());
+        log.info("[TimelineRebuild] receive rebuild request, rebuildTime={}", message.getRebuildTime());
 
         try {
             String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
 
-            // 查最近 5000 篇文章（按发布时间降序），用于重建时间轴
+            // Only approved articles are allowed to enter the public timeline.
             List<ArticleDO> articles = articleMapper.selectList(
                     new QueryWrapper<ArticleDO>()
+                            .eq("status", ArticleStatusConstants.APPROVED)
                             .orderByDesc("create_time")
                             .last("LIMIT 5000"));
 
             if (!articles.isEmpty()) {
-                // 先删除旧 Key，再批量写入，保证 ZSet 内容与 DB 一致
                 redisTemplate.delete(articleListKey);
 
                 Set<ZSetOperations.TypedTuple<Object>> tuples = new HashSet<>(articles.size());
@@ -64,14 +57,14 @@ public class TimelineRebuildConsumer {
                             article.getId().toString(), (double) score));
                 }
                 redisTemplate.opsForZSet().add(articleListKey, tuples);
-                log.info("[TimelineRebuild] ZSet 重建完成，共写入 {} 条", articles.size());
+                log.info("[TimelineRebuild] rebuild finished, total={}", articles.size());
             } else {
-                log.warn("[TimelineRebuild] 数据库中无文章数据，ZSet 重建跳过");
+                log.warn("[TimelineRebuild] no approved article found, skip rebuild");
             }
 
         } catch (Exception e) {
-            log.error("[TimelineRebuild] ZSet 重建失败, error: {}, 消息将被丢弃", e.getMessage(), e);
-            // Auto ACK 模式下，异常会导致消息被直接丢弃，不重试
+            log.error("[TimelineRebuild] rebuild failed, error={}", e.getMessage(), e);
+            // Auto ACK mode: this message will not be retried here.
         }
     }
 }

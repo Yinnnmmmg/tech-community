@@ -45,14 +45,21 @@ public class RabbitMQConfig {
     public static final String ARTICLE_DIRECT_EXCHANGE  = "article.direct";
     public static final String ARTICLE_DLX_EXCHANGE     = "article.dlx";
 
+    public static final String NOTIFY_DIRECT_EXCHANGE     = "notify.direct";
+
+
     // ===================== 主队列 =====================
+    public static final String ARTICLE_PUBLISH_REVIEW_QUEUE  = "article.publish.review.queue";
     public static final String ARTICLE_PUBLISH_TIMELINE_QUEUE = "article.publish.timeline.queue";
     public static final String ARTICLE_PUBLISH_NOTIFY_QUEUE = "article.publish.notify.queue";
     public static final String ARTICLE_PUBLISH_ES_QUEUE = "article.publish.es.queue";
     public static final String TIMELINE_REBUILD_QUEUE   = "timeline.rebuild.queue";
     public static final String ARTICLE_LIKE_QUEUE  = "article.like.queue";
 
+    public static final String NOTIFY_PUBLISH_FAIL_QUEUE = "notify.publish.fail.queue";
+
     // ===================== 死信队列 =====================
+    public static final String ARTICLE_PUBLISH_REVIEW_DLQ  = "article.publish.review.dlq";
     public static final String ARTICLE_PUBLISH_TIMELINE_DLQ = "article.publish.timeline.dlq";
     public static final String ARTICLE_PUBLISH_NOTIFY_DLQ = "article.publish.notify.dlq";
     public static final String ARTICLE_PUBLISH_ES_DLQ = "article.publish.es.dlq";
@@ -60,13 +67,18 @@ public class RabbitMQConfig {
     public static final String ARTICLE_LIKE_DLQ      = "article.like.dlq";
 
     // ===================== 路由键 =====================
-    public static final String TIMELINE_REBUILD_KEY     = "timeline.rebuild";
+    private static final String ARTICLE_PUBLISH_REVIEW_KEY = "article.publish.review";
+    private static final String TIMELINE_REBUILD_KEY = "timeline.rebuild";
+    private static final String ARTICLE_LIKE_KEY  = "article.like";
+    private static final String ARTICLE_PUBLISH_REVIEW_DEAD_KEY = "article.publish.review.dead";
     private static final String ARTICLE_PUBLISH_TIMELINE_DEAD_KEY = "article.publish.timeline.dead";
     private static final String ARTICLE_PUBLISH_NOTIFY_DEAD_KEY = "article.publish.notify.dead";
     private static final String ARTICLE_PUBLISH_ES_DEAD_KEY = "article.publish.es.dead";
     private static final String TIMELINE_REBUILD_DEAD_KEY = "timeline.rebuild.dead";
     private static final String ARTICLE_LIKE_DEAD_KEY  = "article.like.dead";
-    private static final String ARTICLE_LIKE_KEY  = "article.like";
+
+    private static final String NOTIFY_PUBLISH_FAIL_KEY = "notify.publish.fail";
+
 
     // -----------------------------------------------------------------------
     // 消息转换器：JSON 序列化，生产者/消费者两侧统一
@@ -125,10 +137,22 @@ public class RabbitMQConfig {
         return ExchangeBuilder.directExchange(ARTICLE_DLX_EXCHANGE).durable(true).build();
     }
 
+    @Bean
+    public DirectExchange notifyDirectExchange() {
+        return ExchangeBuilder.directExchange(NOTIFY_DIRECT_EXCHANGE).durable(true).build();
+    }
+
     // -----------------------------------------------------------------------
     // 主队列声明（durable=true + x-dead-letter-exchange 参数）
     // 消费者调用 basicNack(requeue=false) 后，消息自动路由至 DLX
     // -----------------------------------------------------------------------
+    @Bean
+    public Queue articlePublishReviewQueue() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_REVIEW_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_PUBLISH_REVIEW_DEAD_KEY)
+                .build();
+    }
     @Bean
     public Queue articlePublishTimelineQueue() {
         return QueueBuilder.durable(ARTICLE_PUBLISH_TIMELINE_QUEUE)
@@ -169,9 +193,18 @@ public class RabbitMQConfig {
                 .build();
     }
 
+    @Bean
+    public Queue notifyPublishFailQueue(){
+        return QueueBuilder.durable(NOTIFY_PUBLISH_FAIL_QUEUE)
+                .build();
+    }
     // -----------------------------------------------------------------------
     // 死信队列声明（durable=true）
     // -----------------------------------------------------------------------
+    @Bean
+    public Queue articlePublishReviewDlq() {
+        return QueueBuilder.durable(ARTICLE_PUBLISH_REVIEW_DLQ).build();
+    }
     @Bean
     public Queue articlePublishTimelineDlq() {
         return QueueBuilder.durable(ARTICLE_PUBLISH_TIMELINE_DLQ).build();
@@ -200,6 +233,13 @@ public class RabbitMQConfig {
     // -----------------------------------------------------------------------
     // 绑定：主队列 → 交换机
     // -----------------------------------------------------------------------
+    @Bean
+    public Binding articlePublishReviewBinding(Queue articlePublishReviewQueue,
+                                               DirectExchange articleDirectExchange) {
+        return BindingBuilder.bind(articlePublishReviewQueue)
+                .to(articleDirectExchange)
+                .with(ARTICLE_PUBLISH_REVIEW_KEY);
+    }
     @Bean
     public Binding articlePublishTimelineBinding(Queue articlePublishTimelineQueue,
                                                  FanoutExchange articleFanoutExchange) {
@@ -234,9 +274,24 @@ public class RabbitMQConfig {
                 .with(ARTICLE_LIKE_KEY);
     }
 
+    @Bean
+    public Binding notifyPublishFailBinding(Queue notifyPublishFailQueue,
+                                           DirectExchange notifyDirectExchange) {
+        return BindingBuilder.bind(notifyPublishFailQueue)
+                .to(notifyDirectExchange)
+                .with(NOTIFY_PUBLISH_FAIL_KEY);
+    }
+
     // -----------------------------------------------------------------------
     // 绑定：死信队列 → DLX
     // -----------------------------------------------------------------------
+    @Bean
+    public Binding articlePublishReviewDlqBinding(Queue articlePublishReviewDlq,
+                                                  DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articlePublishReviewDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_PUBLISH_REVIEW_DEAD_KEY);
+    }
     @Bean
     public Binding articlePublishTimelineDlqBinding(Queue articlePublishTimelineDlq,
                                                     DirectExchange articleDlxExchange) {

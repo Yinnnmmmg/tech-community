@@ -4,6 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ying.tech.community.core.common.CursorPageResult;
+import com.ying.tech.community.core.constants.ArticleStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.article.entity.ArticleDO;
@@ -69,6 +70,7 @@ public class ArticleServiceImpl implements ArticleService {
         ArticleDO article = new ArticleDO();
         BeanUtil.copyProperties(articlePostReq, article);
         article.setUserId(userId);
+        article.setStatus(ArticleStatusConstants.PENDING);
         articleMapper.insert(article);
         log.info("文章表插入数据库成功，文章 ID: {}", article.getId());
 
@@ -94,7 +96,7 @@ public class ArticleServiceImpl implements ArticleService {
                         String messageId = UUID.randomUUID().toString();
                         CorrelationData correlationData = new CorrelationData(messageId);
                         // 通过 MessagePostProcessor 将 messageId 写入消息属性，消费者可读取用于幂等判断
-                        rabbitTemplate.convertAndSend("article.fanout", "", message, msg -> {
+                        rabbitTemplate.convertAndSend("article.direct", "article.publish.review", message, msg -> {
                             msg.getMessageProperties().setMessageId(messageId);
                             return msg;
                         }, correlationData);
@@ -206,7 +208,9 @@ public class ArticleServiceImpl implements ArticleService {
         Map<String, ArticleDO> missingArticlesMap = new HashMap<>();
         if (!missingIds.isEmpty()) {
             log.info("Redis 缓存缺失，批量回表查库，missingIds: {}", missingIds);
-            List<ArticleDO> dbArticles = articleMapper.selectBatchIds(missingIds);
+            List<ArticleDO> dbArticles = articleMapper.selectList(new QueryWrapper<ArticleDO>()
+                    .in("id", missingIds)
+                    .eq("status", ArticleStatusConstants.APPROVED));
 
             // 同时构建：本地 Map（供第 5 步按 ID 快速查找）和 Redis 批量写入 Map
             Map<String, Object> redisBatchData = new HashMap<>();
@@ -240,7 +244,7 @@ public class ArticleServiceImpl implements ArticleService {
                 articleDO = missingArticlesMap.get(articleId); // 缓存未命中，从回表结果中取
             }
 
-            if (articleDO != null) {
+            if (articleDO != null && Objects.equals(articleDO.getStatus(), ArticleStatusConstants.APPROVED)) {
                 finalVOs.add(BeanUtil.copyProperties(articleDO, ArticleListVO.class));
             }
         }
@@ -267,7 +271,8 @@ public class ArticleServiceImpl implements ArticleService {
 
         // 根据 cursor 构建查询条件：createTime < cursor
         QueryWrapper<ArticleDO> queryWrapper = new QueryWrapper<>();
-        queryWrapper.orderByDesc("create_time")
+        queryWrapper.eq("status", ArticleStatusConstants.APPROVED)
+                .orderByDesc("create_time")
                 .last("LIMIT " + pageSize);
 
         // 如果 cursor 存在，添加时间条件

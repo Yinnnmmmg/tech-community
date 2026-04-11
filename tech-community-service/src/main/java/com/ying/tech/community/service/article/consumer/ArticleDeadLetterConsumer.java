@@ -87,4 +87,15 @@ public class ArticleDeadLetterConsumer {
         //   2. 降级：直接触发同步重建逻辑（绕过 MQ）
         channel.basicAck(deliveryTag, false);
     }
+
+    @RabbitListener(queues = "article.publish.review.dlq")
+    public void handleArticlePublishReviewDead(Message message,
+                                               Channel channel,
+                                               @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+            throws IOException {
+        log.error("[DLQ][ArticlePublishReview] 消息进入死信队列，message: {}", message);
+        /// TODO: 补偿处理，例如：
+        //   1. 告警通知运维人工介入
+        //   2. 降级：直接触发同步重建逻辑（绕过 MQ）
+            }
 }
