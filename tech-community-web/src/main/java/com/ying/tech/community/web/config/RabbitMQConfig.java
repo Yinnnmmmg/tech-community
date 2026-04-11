@@ -28,13 +28,11 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>主队列（durable，携带 x-dead-letter-exchange 参数）：
  * <ul>
- *   <li>article.publish.queue  → 消费文章发布消息</li>
  *   <li>timeline.rebuild.queue → 消费时间轴重建消息</li>
  * </ul>
  *
  * <p>死信队列（durable，绑定到 article.dlx，用于人工补偿）：
  * <ul>
- *   <li>article.publish.dlq</li>
  *   <li>timeline.rebuild.dlq</li>
  * </ul>
  */
@@ -48,7 +46,6 @@ public class RabbitMQConfig {
     public static final String ARTICLE_DLX_EXCHANGE     = "article.dlx";
 
     // ===================== 主队列 =====================
-    public static final String ARTICLE_PUBLISH_QUEUE    = "article.publish.queue";
     public static final String ARTICLE_PUBLISH_TIMELINE_QUEUE = "article.publish.timeline.queue";
     public static final String ARTICLE_PUBLISH_NOTIFY_QUEUE = "article.publish.notify.queue";
     public static final String ARTICLE_PUBLISH_ES_QUEUE = "article.publish.es.queue";
@@ -56,7 +53,6 @@ public class RabbitMQConfig {
     public static final String ARTICLE_LIKE_QUEUE  = "article.like.queue";
 
     // ===================== 死信队列 =====================
-    public static final String ARTICLE_PUBLISH_DLQ      = "article.publish.dlq";
     public static final String ARTICLE_PUBLISH_TIMELINE_DLQ = "article.publish.timeline.dlq";
     public static final String ARTICLE_PUBLISH_NOTIFY_DLQ = "article.publish.notify.dlq";
     public static final String ARTICLE_PUBLISH_ES_DLQ = "article.publish.es.dlq";
@@ -65,7 +61,6 @@ public class RabbitMQConfig {
 
     // ===================== 路由键 =====================
     public static final String TIMELINE_REBUILD_KEY     = "timeline.rebuild";
-    private static final String ARTICLE_PUBLISH_DEAD_KEY  = "article.publish.dead";
     private static final String ARTICLE_PUBLISH_TIMELINE_DEAD_KEY = "article.publish.timeline.dead";
     private static final String ARTICLE_PUBLISH_NOTIFY_DEAD_KEY = "article.publish.notify.dead";
     private static final String ARTICLE_PUBLISH_ES_DEAD_KEY = "article.publish.es.dead";
@@ -135,14 +130,6 @@ public class RabbitMQConfig {
     // 消费者调用 basicNack(requeue=false) 后，消息自动路由至 DLX
     // -----------------------------------------------------------------------
     @Bean
-    public Queue articlePublishQueue() {
-        return QueueBuilder.durable(ARTICLE_PUBLISH_QUEUE)
-                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
-                .withArgument("x-dead-letter-routing-key", ARTICLE_PUBLISH_DEAD_KEY)
-                .build();
-    }
-
-    @Bean
     public Queue articlePublishTimelineQueue() {
         return QueueBuilder.durable(ARTICLE_PUBLISH_TIMELINE_QUEUE)
                 .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
@@ -186,11 +173,6 @@ public class RabbitMQConfig {
     // 死信队列声明（durable=true）
     // -----------------------------------------------------------------------
     @Bean
-    public Queue articlePublishDlq() {
-        return QueueBuilder.durable(ARTICLE_PUBLISH_DLQ).build();
-    }
-
-    @Bean
     public Queue articlePublishTimelineDlq() {
         return QueueBuilder.durable(ARTICLE_PUBLISH_TIMELINE_DLQ).build();
     }
@@ -218,12 +200,6 @@ public class RabbitMQConfig {
     // -----------------------------------------------------------------------
     // 绑定：主队列 → 交换机
     // -----------------------------------------------------------------------
-    @Bean
-    public Binding articlePublishBinding(Queue articlePublishQueue,
-                                          FanoutExchange articleFanoutExchange) {
-        return BindingBuilder.bind(articlePublishQueue).to(articleFanoutExchange);
-    }
-
     @Bean
     public Binding articlePublishTimelineBinding(Queue articlePublishTimelineQueue,
                                                  FanoutExchange articleFanoutExchange) {
@@ -261,14 +237,6 @@ public class RabbitMQConfig {
     // -----------------------------------------------------------------------
     // 绑定：死信队列 → DLX
     // -----------------------------------------------------------------------
-    @Bean
-    public Binding articlePublishDlqBinding(Queue articlePublishDlq,
-                                              DirectExchange articleDlxExchange) {
-        return BindingBuilder.bind(articlePublishDlq)
-                .to(articleDlxExchange)
-                .with(ARTICLE_PUBLISH_DEAD_KEY);
-    }
-
     @Bean
     public Binding articlePublishTimelineDlqBinding(Queue articlePublishTimelineDlq,
                                                     DirectExchange articleDlxExchange) {
