@@ -58,6 +58,8 @@ public class RabbitMQConfig {
 
     public static final String NOTIFY_PUBLISH_FAIL_QUEUE = "notify.publish.fail.queue";
 
+    public static final String AI_EMBEDDING_QUEUE = "ai.embedding.queue";
+
     // ===================== 死信队列 =====================
     public static final String ARTICLE_PUBLISH_REVIEW_DLQ  = "article.publish.review.dlq";
     public static final String ARTICLE_PUBLISH_TIMELINE_DLQ = "article.publish.timeline.dlq";
@@ -65,6 +67,7 @@ public class RabbitMQConfig {
     public static final String ARTICLE_PUBLISH_ES_DLQ = "article.publish.es.dlq";
     public static final String TIMELINE_REBUILD_DLQ     = "timeline.rebuild.dlq";
     public static final String ARTICLE_LIKE_DLQ      = "article.like.dlq";
+    public static final String AI_EMBEDDING_DLQ = "ai.embedding.dlq";
 
     // ===================== 路由键 =====================
     private static final String ARTICLE_PUBLISH_REVIEW_KEY = "article.publish.review";
@@ -78,6 +81,9 @@ public class RabbitMQConfig {
     private static final String ARTICLE_LIKE_DEAD_KEY  = "article.like.dead";
 
     private static final String NOTIFY_PUBLISH_FAIL_KEY = "notify.publish.fail";
+
+    private static final String AI_EMBEDDING_KEY = "ai.embedding";
+    private static final String AI_EMBEDDING_DEAD_KEY = "ai.embedding.dead";
 
 
     // -----------------------------------------------------------------------
@@ -198,6 +204,14 @@ public class RabbitMQConfig {
         return QueueBuilder.durable(NOTIFY_PUBLISH_FAIL_QUEUE)
                 .build();
     }
+
+    @Bean
+    public Queue aiEmbeddingQueue(){
+        return QueueBuilder.durable(AI_EMBEDDING_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", AI_EMBEDDING_DEAD_KEY)
+                .build();
+    }
     // -----------------------------------------------------------------------
     // 死信队列声明（durable=true）
     // -----------------------------------------------------------------------
@@ -230,6 +244,10 @@ public class RabbitMQConfig {
         return QueueBuilder.durable(ARTICLE_LIKE_DLQ).build();
     }
 
+    @Bean
+    public Queue aiEmbeddingDlq(){
+        return QueueBuilder.durable(AI_EMBEDDING_DLQ).build();
+    }
     // -----------------------------------------------------------------------
     // 绑定：主队列 → 交换机
     // -----------------------------------------------------------------------
@@ -282,6 +300,12 @@ public class RabbitMQConfig {
                 .with(NOTIFY_PUBLISH_FAIL_KEY);
     }
 
+    @Bean
+    public Binding aiEmbeddingBinding(Queue aiEmbeddingQueue,
+                                      FanoutExchange articleFanoutExchange) {
+        return BindingBuilder.bind(aiEmbeddingQueue).to(articleFanoutExchange);
+    }
+
     // -----------------------------------------------------------------------
     // 绑定：死信队列 → DLX
     // -----------------------------------------------------------------------
@@ -330,6 +354,14 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(articleLikeDlq)
                 .to(articleDlxExchange)
                 .with(ARTICLE_LIKE_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding aiEmbeddingDlqBinding(Queue aiEmbeddingDlq,
+                                           DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(aiEmbeddingDlq)
+                .to(articleDlxExchange)
+                .with(AI_EMBEDDING_DEAD_KEY);
     }
 
     // -----------------------------------------------------------------------

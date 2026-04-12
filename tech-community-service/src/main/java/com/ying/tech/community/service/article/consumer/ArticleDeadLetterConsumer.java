@@ -25,7 +25,7 @@ import java.io.IOException;
 @Slf4j
 @Component
 public class ArticleDeadLetterConsumer {
-    @RabbitListener(queues = "article.publish.timeline.dlq", containerFactory = "autoAckListenerContainerFactory")
+    @RabbitListener(queues = "article.publish.timeline.dlq")
     public void handleArticlePublishTimelineDead(ArticlePublishMessage message,
                                                  Channel channel,
                                                  @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
@@ -35,7 +35,7 @@ public class ArticleDeadLetterConsumer {
         channel.basicAck(deliveryTag, false);
     }
 
-    @RabbitListener(queues = "article.publish.notify.dlq", containerFactory = "autoAckListenerContainerFactory")
+    @RabbitListener(queues = "article.publish.notify.dlq")
     public void handleArticlePublishNotifyDead(ArticlePublishMessage message,
                                                Channel channel,
                                                @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
@@ -45,7 +45,7 @@ public class ArticleDeadLetterConsumer {
         channel.basicAck(deliveryTag, false);
     }
 
-    @RabbitListener(queues = "article.publish.es.dlq", containerFactory = "autoAckListenerContainerFactory")
+    @RabbitListener(queues = "article.publish.es.dlq")
     public void handleArticlePublishEsDead(ArticlePublishMessage message,
                                            Channel channel,
                                            @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)

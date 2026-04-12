@@ -25,7 +25,7 @@ import java.time.ZoneId;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 文章发布后同步到 ES 的消费者。
+ * 文章审核后同步到 ES 的消费者。
  *
  * 处理流程：
  * 1. 消费发布消息；
@@ -59,7 +59,7 @@ public class ArticlePublishEsSyncConsumer {
     private ArticleESRepository articleESRepository;
 
     /**
-     * 消费文章发布消息并同步到 ES。
+     * 消费文章审核消息并同步到 ES。
      *
      * @param message 发布消息
      * @param channel RabbitMQ Channel，用于手动 ACK
