@@ -19,6 +19,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/user/**") // 拦截 /user/ 下的所有请求
                 .addPathPatterns("/article/**") // 以后有了文章接口也要拦截
                 .addPathPatterns("/Notify/**") // 拦截通知消息接口
+                .addPathPatterns("/ai/**") // 拦截ai接口
                 // 👇 排除白名单：登录和注册接口不需要 Token
                 .excludePathPatterns("/user/login", "/user/register");
     }

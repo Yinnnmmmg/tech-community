@@ -35,7 +35,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    // 鍒嗘閿佹暟缁勶細鍥哄畾 256 涓攣锛岄€氳繃 articleId 鍙栨ā閫夐攣锛屽交搴曢伩鍏嶅唴瀛樻硠婕?
+    // 分段锁数组：固定 256 把锁，按 articleId 取模映射，避免锁对象无限增长
     private static final int LOCK_SEGMENT_COUNT = 256;
     private final Lock[] segmentLocks;
 
@@ -47,73 +47,74 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     }
 
     /**
-     * 鏍规嵁鏂囩珷id鑾峰彇鏂囩珷璇︽儏
-     *
-     * */
+     * 根据文章 id 获取文章详情
+     */
     @Override
     public ArticleDetailVO getArticleDetailById(Long articleId) {
         if (!isArticleApproved(articleId)) {
             log.warn("article not approved, articleId: {}", articleId);
             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
         }
-        //鎷兼帴redis鐨刱ey
-        String articleDetailKey = RedisConstants.TECH_COMMUNITY_ARTICLE_DETAIL + articleId;
-        //鏌edis
-        ArticleDetailDO articleDetailDO = (ArticleDetailDO)redisTemplate.opsForValue().get(articleDetailKey);
-        //瀛樺湪锛岃繑鍥?
-        if(articleDetailDO != null){
-            // 銆愰槻绌块€忛棴鐜€戯細鍒ゆ柇鎷垮埌鐨勬槸涓嶆槸鎴戜滑涓轰簡闃茬┛閫忕壒鎰忓鍏ョ殑鈥滅┖瀵硅薄鈥?
-            if (articleDetailDO.getId() == null) {
-                log.warn("瑙﹀彂缂撳瓨绌块€忛槻寰★紝鐩存帴鎷︽埅闈炴硶 articleId: {}", articleId);
-                throw new BusinessException(StatusEnum.PARAM_ILLEGAL); // 鎴栬€?return null
-            }
-            ArticleDetailVO articleDetailVO = new ArticleDetailVO();
-            BeanUtil.copyProperties(articleDetailDO,articleDetailVO);
-            //姣忚皟鐢ㄤ竴娆★紝娴忚娆℃暟鍔?
-            safeIncrementViewCount(articleId);
-            return articleDetailVO;
-        }
 
-        //涓嶅瓨鍦紝鏌ユ暟鎹簱
-        //灏濊瘯鑾峰彇閿?
-        Lock lock = getLock(articleId);
-        lock.lock();
-        try{
-            //鍏堢湅鏄惁鏈夌紦瀛橈紝鍦ㄨ繘鍏ュ悗鐪嬪厛鍓嶆湁娌℃湁绾跨▼閲嶅缓浜嗙紦瀛?
-            articleDetailDO = (ArticleDetailDO)redisTemplate.opsForValue().get(articleDetailKey);
-            if(articleDetailDO != null){
-                // 銆愰槻绌块€忛棴鐜€戯細鍒ゆ柇鎷垮埌鐨勬槸涓嶆槸鎴戜滑涓轰簡闃茬┛閫忕壒鎰忓鍏ョ殑鈥滅┖瀵硅薄鈥?
-                if (articleDetailDO.getId() == null) {
-                    log.warn("瑙﹀彂缂撳瓨绌块€忛槻寰★紝鐩存帴鎷︽埅闈炴硶 articleId: {}", articleId);
-                    throw new BusinessException(StatusEnum.PARAM_ILLEGAL); // 鎴栬€?return null
-                }
-                ArticleDetailVO articleDetailVO = new ArticleDetailVO();
-                BeanUtil.copyProperties(articleDetailDO,articleDetailVO);
-                //姣忚皟鐢ㄤ竴娆★紝娴忚娆℃暟鍔?
-                safeIncrementViewCount(articleId);
-                return articleDetailVO;
-            }
-            //绗竴涓嚎绋嬭幏鍙栭攣鎴愬姛锛屽垯杩涜鏁版嵁搴撴煡璇?
-            Long articleDetailId = articleDetailMapper.getArticleDetailIdById(articleId);
-            if(articleDetailId != null){
-                articleDetailDO = articleDetailMapper.selectById(articleDetailId);
-            }
-            if (articleDetailDO == null) {
-                log.warn("鏂囩珷璇︽儏涓嶅瓨鍦紝articleId: {}", articleId);
-                //缂撳瓨绌哄璞★紝闃叉缂撳瓨绌块€?
-                redisTemplate.opsForValue()
-                        .set(articleDetailKey,
-                                new ArticleDetailDO(), 5, TimeUnit.MINUTES);
+        // Redis 缓存 key
+        String articleDetailKey = RedisConstants.TECH_COMMUNITY_ARTICLE_DETAIL + articleId;
+        // 先查 Redis
+        ArticleDetailDO articleDetailDO = (ArticleDetailDO) redisTemplate.opsForValue().get(articleDetailKey);
+        // 缓存命中
+        if (articleDetailDO != null) {
+            // 空对象占位命中，说明文章详情不存在，直接拦截
+            if (articleDetailDO.getId() == null) {
+                log.warn("文章详情缓存命中空对象，articleId: {}", articleId);
                 throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
             }
             ArticleDetailVO articleDetailVO = new ArticleDetailVO();
             BeanUtil.copyProperties(articleDetailDO, articleDetailVO);
-            //閲嶅缓缂撳瓨锛岃缃繃鏈熸椂闂达細鍩虹1灏忔椂 + 0~10鍒嗛挓闅忔満娉㈠姩锛岄槻寰＄紦瀛橀洩宕?
-            long baseMinutes = 60; // 1灏忔椂
-            long randomMinutes = ThreadLocalRandom.current().nextLong(0, 11); // 0~10鍒嗛挓闅忔満鏁?
+            // 浏览量安全自增
+            safeIncrementViewCount(articleId);
+            return articleDetailVO;
+        }
+
+        // 缓存未命中，使用分段锁防止缓存击穿
+        Lock lock = getLock(articleId);
+        lock.lock();
+        try {
+            // 双重检查，避免拿到锁前已经有线程回填缓存
+            articleDetailDO = (ArticleDetailDO) redisTemplate.opsForValue().get(articleDetailKey);
+            if (articleDetailDO != null) {
+                // 空对象占位命中，说明文章详情不存在，直接拦截
+                if (articleDetailDO.getId() == null) {
+                    log.warn("文章详情缓存命中空对象，articleId: {}", articleId);
+                    throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+                }
+                ArticleDetailVO articleDetailVO = new ArticleDetailVO();
+                BeanUtil.copyProperties(articleDetailDO, articleDetailVO);
+                // 浏览量安全自增
+                safeIncrementViewCount(articleId);
+                return articleDetailVO;
+            }
+
+            // 查询数据库中的文章详情
+            Long articleDetailId = articleDetailMapper.getArticleDetailIdById(articleId);
+            if (articleDetailId != null) {
+                articleDetailDO = articleDetailMapper.selectById(articleDetailId);
+            }
+            if (articleDetailDO == null) {
+                log.warn("文章详情不存在，articleId: {}", articleId);
+                // 写入空对象占位，短时间内防止缓存穿透
+                redisTemplate.opsForValue().set(articleDetailKey, new ArticleDetailDO(), 5, TimeUnit.MINUTES);
+                throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+            }
+
+            ArticleDetailVO articleDetailVO = new ArticleDetailVO();
+            BeanUtil.copyProperties(articleDetailDO, articleDetailVO);
+
+            // 正常数据写入缓存，基础 60 分钟并追加 0~10 分钟随机过期时间，避免雪崩
+            long baseMinutes = 60; // 1 小时
+            long randomMinutes = ThreadLocalRandom.current().nextLong(0, 11); // 0~10 分钟随机值
             long expireMinutes = baseMinutes + randomMinutes;
             redisTemplate.opsForValue().set(articleDetailKey, articleDetailDO, expireMinutes, TimeUnit.MINUTES);
-            //姣忚皟鐢ㄤ竴娆★紝娴忚娆℃暟鍔?
+
+            // 浏览量安全自增
             safeIncrementViewCount(articleId);
             return articleDetailVO;
         } finally {
@@ -121,48 +122,45 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         }
     }
 
-
     /**
-     * 瀹夊叏鍦板鍔犳枃绔犻槄璇婚噺锛岄伩鍏?Redis 涓?key 涓嶅瓨鍦ㄦ垨绫诲瀷閿欒
+     * 安全地递增浏览量，优先操作 Redis，失败时回退到数据库值再重试
      */
     private void safeIncrementViewCount(Long articleId) {
-        // 銆愭牳蹇冨厹搴曢€昏緫銆戯細妫€鏌?Redis 涓槸鍚︽湁杩欎釜闃呰閲?Key
+        // 浏览量缓存 key
         String viewCountKey = RedisConstants.TECH_COMMUNITY_ARTICLE_VIEW_COUNT + articleId;
         if (Boolean.FALSE.equals(stringRedisTemplate.hasKey(viewCountKey))) {
-            // 1. 濡傛灉娌℃湁锛屽幓 MySQL 鏌ュ嚭鐪熷疄鐨勫巻鍙查槄璇婚噺
+            // Redis 中没有浏览量时，先从 MySQL 读取当前值
             ArticleDO article = articleMapper.selectById(articleId);
             Long dbViewCount = (article != null && article.getViewCount() != null) ? article.getViewCount() : 0L;
 
-            // 2. 灏嗙湡瀹炴暟鎹鍏?Redis銆?
-            // 銆愭灦鏋勭粏鑺傘€戯細浣跨敤 setIfAbsent 鑰屼笉鏄?set銆?
-            // 濡傛灉鏋佺鎯呭喌涓嬫湁100涓汉鍚屾椂鍦≧edis娌℃暟鎹椂鐐硅繘鏂囩珷锛屽彧鏈変竴涓嚎绋嬭兘璁剧疆鎴愬姛锛屽叾浠栫嚎绋嬩細琚尅浣忥紝闃叉鏃ф暟鎹鐩栥€?
-            // 鍚屾椂椤烘墜璁剧疆 30 澶╃殑杩囨湡鏃堕棿锛岄槻姝㈠喎鏁版嵁姘歌繙鍗犵敤鍐呭瓨銆?
+            // 使用 setIfAbsent 初始化 Redis，避免并发下覆盖已经被其他线程更新的值
+            // 这里统一设置 30 天过期时间，后续每次自增时续期
             stringRedisTemplate.opsForValue().setIfAbsent(viewCountKey, String.valueOf(dbViewCount), 30, TimeUnit.DAYS);
         }
         try {
             stringRedisTemplate.opsForValue().increment(viewCountKey);
-            // 鍔ㄦ€佺画鏈燂細姣忔闃呰閲忓鍔犲悗鍒锋柊杩囨湡鏃堕棿锛岄暱杩囨湡鏃堕棿 30 澶?
+            // 每次自增后续期，维持 30 天有效期
             stringRedisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
         } catch (Exception e) {
-            log.warn("increment澶辫触锛屽洖婧怐B: {}", viewCountKey, e);
+            log.warn("浏览量自增失败，key: {}", viewCountKey, e);
 
-            // 1. 浠庢暟鎹簱璇诲彇鐪熷疄鍊?
+            // 重新从数据库读取浏览量
             QueryWrapper<ArticleDO> articleWrapper = new QueryWrapper<ArticleDO>()
                     .select("view_count")
                     .eq("id", articleId);
             ArticleDO article = articleMapper.selectOne(articleWrapper);
             long dbCount = (article != null && article.getViewCount() != null) ? article.getViewCount() : 0L;
-            // 2. 鍥炲～Redis锛堝繀椤荤敤 String锛屼繚璇?Redis INCR 鍙互姝ｅ父鎵ц锛?
+
+            // 回写 Redis 基础值，确保后续 INCR 可继续执行
             stringRedisTemplate.opsForValue().set(viewCountKey, String.valueOf(dbCount));
 
-            // 3. 鍐嶈嚜澧?
+            // 再次尝试自增
             stringRedisTemplate.opsForValue().increment(viewCountKey);
 
-            // 4. 璁剧疆杩囨湡鏃堕棿
+            // 重新设置过期时间
             stringRedisTemplate.expire(viewCountKey, 30, TimeUnit.DAYS);
         }
     }
-
 
     private boolean isArticleApproved(Long articleId) {
         ArticleDO article = articleMapper.selectById(articleId);
@@ -170,11 +168,13 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     }
 
     /**
-     * 鑾峰彇閿佸璞★紙鍒嗘閿侊紝鍥哄畾鍐呭瓨鍗犵敤锛?
+     * 根据文章 id 映射到固定分段锁，避免为每篇文章单独创建锁对象
      */
     private Lock getLock(Long articleId) {
-        int index = (int)(articleId % LOCK_SEGMENT_COUNT);
-        if (index < 0) index += LOCK_SEGMENT_COUNT;
+        int index = (int) (articleId % LOCK_SEGMENT_COUNT);
+        if (index < 0) {
+            index += LOCK_SEGMENT_COUNT;
+        }
         return segmentLocks[index];
     }
 }
