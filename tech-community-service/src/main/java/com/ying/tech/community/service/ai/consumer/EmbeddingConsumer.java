@@ -94,9 +94,10 @@ public class EmbeddingConsumer {
             metadata.put("title", title);
             metadata.put("authorId", message.getAuthorId());
             Document document = new Document(rawText, metadata);
-            //分割
+            //分割一个个片段的集合
             TokenTextSplitter splitter = new TokenTextSplitter();
             List<Document> chunks = splitter.apply(List.of(document));
+            //存向量数据库
             vectorStore.add(chunks);
 
 

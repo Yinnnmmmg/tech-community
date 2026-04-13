@@ -110,17 +110,18 @@ public class ReviewAndSummaryConsumer {
         }
 
         try {
-            // 1. 获取文章正文内容：从article_detail表查询文章内容，供AI模型审核
+            // 1. 获取文章标题和正文内容：供AI模型审核
+            String title = articleMapper.selectById(message.getArticleId()).getTitle();
             QueryWrapper<ArticleDetailDO> queryWrapper = new QueryWrapper<ArticleDetailDO>()
                     .select("content")
                     .eq("article_id", message.getArticleId());
             String content = articleDetailMapper.selectOne(queryWrapper).getContent();
 
-            // 2. 调用AI大模型进行内容安全审核和摘要生成
+            // 2. 调用AI大模型进行安全审核和摘要生成
             //    使用系统提示词约束模型行为，将文章正文作为用户输入
             ArticleAiResult result = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
-                    .user(u -> u.text("文章正文如下：\n{content}").param("content", content))
+                    .user(u -> u.text("文章标题和正文如下：\n{content},{title}").param("content", content).param("title",title))
                     .call()
                     .entity(ArticleAiResult.class);
 
