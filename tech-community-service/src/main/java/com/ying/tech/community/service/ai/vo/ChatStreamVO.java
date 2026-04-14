@@ -2,7 +2,7 @@ package com.ying.tech.community.service.ai.vo;
 
 import lombok.Builder;
 import lombok.Data;
-import java.util.List;
+import java.util.Set;
 
 @Data
 @Builder
@@ -24,5 +24,17 @@ public class ChatStreamVO {
      * RAG 引用来源列表
      * 优化点：为了节省网络带宽，该字段仅在 isEnd = true（最后一块数据）时附带具体内容，其余中间数据块中可为 null
      */
-    private List<ReferenceVO> references;
+    private Set<ReferenceVO> references;
+
+    /**
+     * 异常结束包的错误码
+     * 仅在 isEnd = true 且发生异常时返回
+     */
+    private Integer errorCode;
+
+    /**
+     * 异常结束包的错误信息
+     * 仅在 isEnd = true 且发生异常时返回
+     */
+    private String errorMessage;
 }
