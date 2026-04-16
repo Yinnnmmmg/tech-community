@@ -9,6 +9,9 @@ import lombok.Data;
 
 import java.io.Serializable;
 
+/**
+ * 文章主表实体。
+ */
 @Data
 @TableName("article")
 public class ArticleDO extends BaseDO implements Serializable {
@@ -46,6 +49,9 @@ public class ArticleDO extends BaseDO implements Serializable {
     private Integer viewCount;
 
     private Integer likeCount;
+
+    /** 文章收藏数。 */
+    private Integer collectionCount;
 
     @TableLogic
     private Integer deleted;

@@ -1,6 +1,10 @@
 ﻿spring:
   profiles:
     active: dev
+  servlet:
+    multipart:
+      max-file-size: ${app.oss.max-file-size:100MB}
+      max-request-size: ${app.oss.max-file-size:100MB}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${app.secure.datasource.url}
@@ -69,7 +73,6 @@
         port: ${app.secure.ai.vectorstore.qdrant.port}
         collection-name: vector_store
 
-
 elasticsearch:
   host: ${app.secure.elasticsearch.host}
   port: ${app.secure.elasticsearch.port}
@@ -84,3 +87,46 @@ mybatis-plus:
   global-config:
     db-config:
       logic-delete-field: deleted
+
+app:
+  oss:
+    endpoint: ${app.secure.oss.endpoint}
+    bucket: ${app.secure.oss.bucket}
+    access-key-id: ${app.secure.oss.access-key-id}
+    access-key-secret: ${app.secure.oss.access-key-secret}
+    public-base-url: ${app.secure.oss.public-base-url}
+    max-file-size: ${app.secure.oss.max-file-size:100MB}
+    allowed-content-types:
+      - image/jpeg
+      - image/png
+      - image/gif
+      - image/webp
+      - application/pdf
+      - application/zip
+      - application/x-zip-compressed
+      - application/x-rar-compressed
+      - application/octet-stream
+      - video/mp4
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - application/vnd.ms-excel
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/vnd.ms-powerpoint
+      - application/vnd.openxmlformats-officedocument.presentationml.presentation
+    allowed-extensions:
+      - jpg
+      - jpeg
+      - png
+      - gif
+      - webp
+      - pdf
+      - zip
+      - rar
+      - 7z
+      - mp4
+      - doc
+      - docx
+      - xls
+      - xlsx
+      - ppt
+      - pptx

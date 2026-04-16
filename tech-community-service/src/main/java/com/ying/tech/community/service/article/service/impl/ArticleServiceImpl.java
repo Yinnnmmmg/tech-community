@@ -1,218 +1,275 @@
 package com.ying.tech.community.service.article.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
-
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.ying.tech.community.core.common.CursorPageResult;
 import com.ying.tech.community.core.constants.ArticleStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
+import com.ying.tech.community.core.exception.BusinessException;
+import com.ying.tech.community.core.exception.StatusEnum;
 import com.ying.tech.community.core.global.ReqInfoContext;
+import com.ying.tech.community.service.ai.service.ArticleEmbeddingService;
+import com.ying.tech.community.service.article.entity.ArticleAttachmentDO;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.entity.ArticleDetailDO;
+import com.ying.tech.community.service.article.message.ArticlePublishMessage;
+import com.ying.tech.community.service.article.message.TimelineRebuildMessage;
+import com.ying.tech.community.service.article.repository.ArticleESRepository;
 import com.ying.tech.community.service.article.repository.mapper.ArticleDetailMapper;
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.article.req.ArticlePostReq;
+import com.ying.tech.community.service.article.req.ArticleUpdateReq;
+import com.ying.tech.community.service.article.service.ArticleAttachmentService;
 import com.ying.tech.community.service.article.service.ArticleService;
+import com.ying.tech.community.service.article.vo.ArticleCollectVO;
 import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
-import com.ying.tech.community.service.article.message.ArticlePublishMessage;
-import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
-import com.ying.tech.community.service.article.message.TimelineRebuildMessage;
+import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.entity.UserFootDO;
+import com.ying.tech.community.service.user.message.RedisCollectToDBMessage;
+import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * 文章服务实现。
+ *
+ * <p>负责文章发布、编辑、删除、列表查询以及点赞/收藏等读写操作，
+ * 并在事务提交后触发时间轴、搜索和知识库等异步链路。
+ */
 @Slf4j
 @Service
 public class ArticleServiceImpl implements ArticleService {
-    @Autowired
-    private ArticleMapper articleMapper;
-    @Autowired
-    private ArticleDetailMapper articleDetailMapper;
-    @Autowired
-    private UserFootMapper userFootMapper;
-    @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
-    @Autowired
-    private Executor taskExecutor;
+    /** 统一的时间格式化器。 */
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    private final ArticleMapper articleMapper;
+    private final ArticleDetailMapper articleDetailMapper;
+    private final UserFootMapper userFootMapper;
+    private final UserMapper userMapper;
+    private final ArticleAttachmentService articleAttachmentService;
+    private final ArticleEmbeddingService articleEmbeddingService;
+    private final ArticleESRepository articleESRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final RabbitTemplate rabbitTemplate;
+    private final Executor taskExecutor;
+
+    public ArticleServiceImpl(ArticleMapper articleMapper,
+                              ArticleDetailMapper articleDetailMapper,
+                              UserFootMapper userFootMapper,
+                              UserMapper userMapper,
+                              ArticleAttachmentService articleAttachmentService,
+                              ArticleEmbeddingService articleEmbeddingService,
+                              ArticleESRepository articleESRepository,
+                              RedisTemplate<String, Object> redisTemplate,
+                              RabbitTemplate rabbitTemplate,
+                              Executor taskExecutor) {
+        this.articleMapper = articleMapper;
+        this.articleDetailMapper = articleDetailMapper;
+        this.userFootMapper = userFootMapper;
+        this.userMapper = userMapper;
+        this.articleAttachmentService = articleAttachmentService;
+        this.articleEmbeddingService = articleEmbeddingService;
+        this.articleESRepository = articleESRepository;
+        this.redisTemplate = redisTemplate;
+        this.rabbitTemplate = rabbitTemplate;
+        this.taskExecutor = taskExecutor;
+    }
 
     /**
-     * 发布文章
-     * @param articlePostReq
-     * @return Long 文章id
-     * */
+     * 发布文章。
+     *
+     * <p>写入文章主表、详情表并绑定附件，事务提交后再异步发送审核消息。
+     */
     @Transactional(rollbackFor = Exception.class)
     @Override
     public Long publishArticle(ArticlePostReq articlePostReq) {
-        // 获取当前用户的 id
         Long userId = ReqInfoContext.getReqInfo().getUserId();
-        log.info("发布文章，当前用户 ID: {}", userId);
+        log.info("publish article, userId={}", userId);
 
-        // 1. 插入文章主表
         ArticleDO article = new ArticleDO();
         BeanUtil.copyProperties(articlePostReq, article);
         article.setUserId(userId);
         article.setStatus(ArticleStatusConstants.PENDING);
         articleMapper.insert(article);
-        log.info("文章表插入数据库成功，文章 ID: {}", article.getId());
 
-        // 2. 插入文章细节表
         ArticleDetailDO articleDetail = new ArticleDetailDO();
-        BeanUtil.copyProperties(articlePostReq, articleDetail);
         articleDetail.setArticleId(article.getId());
+        articleDetail.setContent(articlePostReq.getContent());
         articleDetailMapper.insert(articleDetail);
-        log.info("文章详情表插入成功，详情 ID: {}", articleDetail.getId());
 
-        // 3. 封装 MQ 消息 (获取当前绝对时间)
+        List<ArticleAttachmentDO> boundAttachments = articleAttachmentService.bindAttachmentsToArticle(
+                article.getId(),
+                userId,
+                articlePostReq.getAttachmentIds()
+        );
+        String coverUrl = resolveCoverUrl(boundAttachments);
+        if (StringUtils.hasText(coverUrl)) {
+            article.setPicture(coverUrl);
+            articleMapper.updateById(article);
+        }
+
         long currentTime = System.currentTimeMillis();
         ArticlePublishMessage message = new ArticlePublishMessage(article.getId(), userId, currentTime);
+        registerAfterCommit(() -> sendPublishMessage(article.getId(), message));
 
-        // 4. 事务提交后，广播 MQ 消息
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // 新开线程异步发送消息，避免阻塞主程序
-                taskExecutor.execute(() -> {
-                    try {
-                        // messageId 同时用于：ConfirmCallback 旁路日志 + 消费者幂等拦截
-                        String messageId = UUID.randomUUID().toString();
-                        CorrelationData correlationData = new CorrelationData(messageId);
-                        // 通过 MessagePostProcessor 将 messageId 写入消息属性，消费者可读取用于幂等判断
-                        rabbitTemplate.convertAndSend("article.direct", "article.publish.review", message, msg -> {
-                            msg.getMessageProperties().setMessageId(messageId);
-                            return msg;
-                        }, correlationData);
-                        log.info("事务提交成功，发文广播消息已发送，文章 ID: {}, messageId: {}", article.getId(), messageId);
-                    } catch (Exception e) {
-                        log.error("发文广播消息发送失败，文章 ID: {}, error: {}", article.getId(), e.getMessage(), e);
-                        // TODO: 可考虑将失败记录写入数据库，后续补偿处理
-                    }
-                });
-            }
-        });
-        // 注意：具体的主表和详情表实体数据不再主动 set 进 Redis
-        // 将装载具体内容缓存的任务，交给前端调用“查询文章详情”接口时去“懒加载”完成。
         return article.getId();
     }
 
+    /**
+     * 更新文章内容并重新提交审核。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public Long updateArticle(Long articleId, ArticleUpdateReq articleUpdateReq) {
+        ArticleDO article = requireOwnedArticle(articleId);
+        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        log.info("update article, articleId={}, userId={}", articleId, currentUserId);
+
+        List<ArticleAttachmentDO> boundAttachments = articleAttachmentService.replaceAttachmentsOnArticle(
+                articleId,
+                currentUserId,
+                articleUpdateReq.getAttachmentIds()
+        );
+        articleMapper.update(null, new UpdateWrapper<ArticleDO>()
+                .eq("id", articleId)
+                .set("title", articleUpdateReq.getTitle())
+                .set("category_id", articleUpdateReq.getCategoryId())
+                .set("summary", null)
+                .set("picture", resolveCoverUrl(boundAttachments))
+                .set("status", ArticleStatusConstants.PENDING));
+
+        ArticleDetailDO detail = articleDetailMapper.selectOne(new QueryWrapper<ArticleDetailDO>()
+                .eq("article_id", articleId)
+                .last("LIMIT 1"));
+        if (detail == null) {
+            detail = new ArticleDetailDO();
+            detail.setArticleId(articleId);
+            detail.setContent(articleUpdateReq.getContent());
+            detail.setVersion(1);
+            articleDetailMapper.insert(detail);
+        } else {
+            detail.setContent(articleUpdateReq.getContent());
+            detail.setVersion(detail.getVersion() == null ? 1 : detail.getVersion() + 1);
+            articleDetailMapper.updateById(detail);
+        }
+
+        Long publishTime = article.getCreateTime() == null
+                ? System.currentTimeMillis()
+                : article.getCreateTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        ArticlePublishMessage message = new ArticlePublishMessage(articleId, currentUserId, publishTime);
+        registerAfterCommit(() -> {
+            clearArticleReadSide(articleId);
+            sendPublishMessage(articleId, message);
+        });
+        return articleId;
+    }
 
     /**
-     * 游标分页查询文章列表（基于 Redis ZSet 时间轴）
+     * 删除当前用户自己的文章。
      *
-     * <p>整体流程：
-     * <ol>
-     *   <li>从 Redis ZSet 中按发布时间降序取出本页的文章 ID 列表（游标控制翻页位置）</li>
-     *   <li>用文章 ID 列表批量查询 Redis String 缓存，获取文章主表数据</li>
-     *   <li>对缓存未命中的 ID 回表查 MySQL，并将查到的数据回写 Redis（Cache-Aside 模式）</li>
-     *   <li>按 ZSet 返回的原始顺序重新组装 VO 列表，保证展示顺序与发布时间一致</li>
-     * </ol>
+     * <p>删除完成后会在事务提交后清理缓存、时间轴、搜索索引和知识库数据。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void deleteArticle(Long articleId) {
+        ArticleDO article = requireOwnedArticle(articleId);
+        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        log.info("delete article, articleId={}, userId={}", articleId, currentUserId);
+
+        articleAttachmentService.releaseAttachmentsOnArticle(articleId);
+        articleDetailMapper.delete(new QueryWrapper<ArticleDetailDO>().eq("article_id", articleId));
+        articleMapper.deleteById(article.getId());
+
+        registerAfterCommit(() -> clearArticleReadSide(articleId));
+    }
+
+    /**
+     * 基于 Redis 时间轴游标分页查询文章列表。
      *
-     * <p>游标设计说明：
-     * <ul>
-     *   <li>ZSet score = 文章发布时的毫秒时间戳，score 越大表示越新</li>
-     *   <li>首次请求：cursor 传 null 或 0，maxScore 取当前时间，查最新的一页</li>
-     *   <li>翻页请求：cursor 传上一页最后一条的 score，maxScore = cursor - 1，跳过已展示条目</li>
-     *   <li>返回的 nextCursor 是本页最后一条（最旧一条）的 score，前端下次请求时原样传回</li>
-     *   <li>nextCursor 为 null，表示已经没有更多数据，前端停止加载</li>
-     * </ul>
-     *
-     * <p>缓存策略说明：
-     * <ul>
-     *   <li>ZSet 索引不设过期时间，作为持久化的时间轴排序结构</li>
-     *   <li>文章主表缓存过期时间为 8 分钟 + [0, 60) 秒随机抖动，防止缓存雪崩</li>
-     *   <li>回写缓存使用 multiSet 批量写入，减少 Redis 网络往返次数</li>
-     * </ul>
-     *
-     * @param cursor   上一页最后一条记录的发布时间戳（毫秒），首次访问传 null 或 0
-     * @param pageSize 每页条数
-     * @return CursorPageResult，包含本页数据列表和下一页游标；nextCursor 为 null 表示已到末页
+     * <p>优先从 Redis ZSet 读取文章 ID，再批量回填文章缓存，最后补充作者和附件信息。
+     * 若时间轴缓存不存在或为空，则退化为数据库分页查询。
      */
     @Override
     public CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize) {
-        log.info("游标查询文章列表，cursor: {}, pageSize: {}", cursor, pageSize);
+        log.info("query article list, cursor={}, pageSize={}", cursor, pageSize);
 
-        // 1. 从 ZSet 时间轴中取出本页文章 ID（按 score 降序，即发布时间从新到旧）
-        // 首次请求 maxScore 取当前时间；翻页时取 cursor-1，跳过上一页最后一条，避免重复
         String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
-        long maxScore = (cursor == null || cursor <= 0) ? System.currentTimeMillis() : cursor-1;
+        long maxScore = (cursor == null || cursor <= 0) ? System.currentTimeMillis() : cursor - 1;
         Set<ZSetOperations.TypedTuple<Object>> typedTuples = redisTemplate.opsForZSet().reverseRangeByScoreWithScores(
                 articleListKey,
                 0,
                 maxScore,
                 0,
-                pageSize);
+                pageSize
+        );
 
-        // 降级：ZSet只保存最近的5000篇文章id，如果为空有两种情况
-        // 1、最近的文章已刷到底  2、缓存丢失（生产环境可在此处补充 DB 游标查库兜底逻辑）
         if (typedTuples == null || typedTuples.isEmpty()) {
-            // 检查 ZSet key 是否存在
             Boolean hasKey = redisTemplate.hasKey(articleListKey);
             if (Boolean.FALSE.equals(hasKey) || hasKey == null) {
-                // 缓存丢失，发送 MQ 消息通知异步重建 ZSet
-                log.warn("Redis ZSet 缓存丢失，发送 MQ 消息通知重建");
-                TimelineRebuildMessage rebuildMessage = new TimelineRebuildMessage(System.currentTimeMillis());
-                rabbitTemplate.convertAndSend("article.direct", "timeline.rebuild", rebuildMessage);
+                rabbitTemplate.convertAndSend("article.direct", "timeline.rebuild", new TimelineRebuildMessage(System.currentTimeMillis()));
             }
-            // 无论哪种情况，都从数据库查询文章列表返回
             return queryArticleListFromDB(cursor, pageSize);
         }
 
-        // 遍历 ZSet 结果，按返回顺序收集文章 ID；
-        // 遍历结束后 nextCursor 停在最后一条（score 最小，即最旧）的时间戳，作为下一页游标
-        ArrayList<String> orderedIds = new ArrayList<>();
+        List<String> orderedIds = new ArrayList<>();
         Long nextCursor = null;
         for (ZSetOperations.TypedTuple<Object> typedTuple : typedTuples) {
             orderedIds.add((String) typedTuple.getValue());
             nextCursor = typedTuple.getScore().longValue();
         }
 
-        // 2. 批量查询 Redis String 缓存：将文章 ID 拼接成 Redis key，一次 multiGet 取回所有数据
-        // multiGet 结果列表的大小和顺序与 keys 完全对应，方便后续按索引对齐
         List<String> keys = orderedIds.stream()
                 .map(id -> RedisConstants.TECH_COMMUNITY_ARTICLE + id)
                 .collect(Collectors.toList());
         List<Object> cachedArticles = redisTemplate.opsForValue().multiGet(keys);
-        // multiGet 在 pipeline/cluster 场景下可能返回 null，兜底用等长的 null 列表替代，保证索引对齐
         if (cachedArticles == null) {
             cachedArticles = new ArrayList<>(Collections.nCopies(keys.size(), null));
         }
 
-        // 3. 找出缓存未命中的文章 ID（缓存中对应位置为 null）
         List<String> missingIds = new ArrayList<>();
-        // multiGet 的结果列表大小和顺序与 keys 完全一致
         for (int i = 0; i < cachedArticles.size(); i++) {
             if (cachedArticles.get(i) == null) {
                 missingIds.add(orderedIds.get(i));
             }
         }
 
-        // 4. 回表查库（Cache-Aside：缓存未命中时回源），并将结果批量回写 Redis
         Map<String, ArticleDO> missingArticlesMap = new HashMap<>();
         if (!missingIds.isEmpty()) {
-            log.info("Redis 缓存缺失，批量回表查库，missingIds: {}", missingIds);
             List<ArticleDO> dbArticles = articleMapper.selectList(new QueryWrapper<ArticleDO>()
                     .in("id", missingIds)
                     .eq("status", ArticleStatusConstants.APPROVED));
 
-            // 同时构建：本地 Map（供第 5 步按 ID 快速查找）和 Redis 批量写入 Map
             Map<String, Object> redisBatchData = new HashMap<>();
             for (ArticleDO article : dbArticles) {
                 String idStr = article.getId().toString();
@@ -220,158 +277,361 @@ public class ArticleServiceImpl implements ArticleService {
                 redisBatchData.put(RedisConstants.TECH_COMMUNITY_ARTICLE + idStr, article);
             }
 
-            // 性能优化：multiSet 一次性批量写入，减少网络往返；
-            // 过期时间 8 分钟 + [0, 60) 秒随机抖动，防止大量 key 同时失效引发缓存雪崩
             if (!redisBatchData.isEmpty()) {
                 redisTemplate.opsForValue().multiSet(redisBatchData);
                 for (String key : redisBatchData.keySet()) {
-                    redisTemplate.expire(key, 8*60 +
-                            ThreadLocalRandom.current().nextLong(0,61), TimeUnit.SECONDS);
+                    redisTemplate.expire(key,
+                            8 * 60 + ThreadLocalRandom.current().nextLong(0, 61),
+                            TimeUnit.SECONDS);
                 }
             }
         }
 
-        // 5. 按 ZSet 返回的原始顺序重新组装 VO 列表
-        // 优先从缓存取，缓存缺失则从第 4 步查库结果中补充，保证最终列表顺序与发布时间一致
-        List<ArticleListVO> finalVOs = new ArrayList<>();
+        List<ArticleDO> finalArticles = new ArrayList<>();
         for (int i = 0; i < orderedIds.size(); i++) {
             String articleId = orderedIds.get(i);
-            ArticleDO articleDO = null;
-
-            if (cachedArticles.get(i) != null) {
-                articleDO = (ArticleDO) cachedArticles.get(i); // 缓存命中
-            } else {
-                articleDO = missingArticlesMap.get(articleId); // 缓存未命中，从回表结果中取
-            }
-
+            ArticleDO articleDO = cachedArticles.get(i) != null
+                    ? (ArticleDO) cachedArticles.get(i)
+                    : missingArticlesMap.get(articleId);
             if (articleDO != null && Objects.equals(articleDO.getStatus(), ArticleStatusConstants.APPROVED)) {
-                finalVOs.add(BeanUtil.copyProperties(articleDO, ArticleListVO.class));
+                finalArticles.add(articleDO);
             }
         }
-        // ZSet 返回条数不足 pageSize，说明已到末页，将 nextCursor 置 null 通知前端停止加载
-        // 注意：必须以 ZSet 实际返回数（orderedIds.size()）为准，而非 finalVOs.size()。
-        // 若以 finalVOs 判断，当 ZSet 里存在已被数据库删除的文章 ID 时，
-        // finalVOs 会偏少，导致游标被错误置 null，后续数据永远加载不到。
+
         if (orderedIds.size() < pageSize) {
             nextCursor = null;
         }
 
-        return new CursorPageResult<>(nextCursor, finalVOs);
+        return new CursorPageResult<>(nextCursor, enrichArticleList(finalArticles));
     }
 
     /**
-     * 从数据库游标分页查询文章列表（降级兜底方案）
-     *
-     * @param cursor   上一页最后一条记录的发布时间戳（毫秒），首次访问传 null 或 0
-     * @param pageSize 每页条数
-     * @return CursorPageResult，包含本页数据列表和下一页游标
+     * 数据库游标分页兜底查询。
      */
     private CursorPageResult<ArticleListVO> queryArticleListFromDB(Long cursor, Integer pageSize) {
-        log.info("从数据库查询文章列表，cursor: {}, pageSize: {}", cursor, pageSize);
-
-        // 根据 cursor 构建查询条件：createTime < cursor
         QueryWrapper<ArticleDO> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", ArticleStatusConstants.APPROVED)
                 .orderByDesc("create_time")
                 .last("LIMIT " + pageSize);
 
-        // 如果 cursor 存在，添加时间条件
         if (cursor != null && cursor > 0) {
-            // cursor 是毫秒时间戳，需要转换为 LocalDateTime
-            LocalDateTime cursorTime = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(cursor), java.time.ZoneId.systemDefault());
+            LocalDateTime cursorTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(cursor), ZoneId.systemDefault());
             queryWrapper.lt("create_time", cursorTime);
         }
 
         List<ArticleDO> articleDOList = articleMapper.selectList(queryWrapper);
+        List<ArticleListVO> voList = enrichArticleList(articleDOList);
 
-        // 转换为 VO
-        List<ArticleListVO> voList = articleDOList.stream()
-                .map(articleDO -> BeanUtil.copyProperties(articleDO, ArticleListVO.class))
-                .collect(Collectors.toList());
-
-        // 计算下一页游标：取最后一条的 createTime（转换为毫秒时间戳）
         Long nextCursor = null;
-        if (!voList.isEmpty()) {
-            ArticleDO lastArticle = articleDOList.get(articleDOList.size() - 1);
-            LocalDateTime createTime = lastArticle.getCreateTime();
+        if (!articleDOList.isEmpty()) {
+            LocalDateTime createTime = articleDOList.get(articleDOList.size() - 1).getCreateTime();
             if (createTime != null) {
-                nextCursor = createTime.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+                nextCursor = createTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
             }
         }
-
-        // 如果返回数量不足 pageSize，说明已到末页
-        if (voList.size() < pageSize) {
+        if (articleDOList.size() < pageSize) {
             nextCursor = null;
         }
-
         return new CursorPageResult<>(nextCursor, voList);
     }
 
     /**
-     * 用redis 实现文章点赞功能
-     * */
+     * 切换文章点赞状态，并通过 MQ 异步落库。
+     */
     @Override
     public ArticleLikeVO likeArticle(Long articleId) {
-        //先在TheadLocal中获取当前用户ID
+        ArticleDO article = requireApprovedArticle(articleId);
         Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
-        //拼接 key
         String likeKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIKE + articleId;
-        // 【核心兜底逻辑】：检查 Redis 中是否存在该 Key,预防redis宕机导致redis数据丢失，添加完这条点赞后点赞数变成了1
         if (Boolean.FALSE.equals(redisTemplate.hasKey(likeKey))) {
-            // 如果 Redis 里没有，去 MySQL 的 user_foot 表查出这篇文章所有点过赞的 userId
-            // 通过文章id查出点过赞的 userId,,注意like_stat为0的不要算进去了
-            List<UserFootDO> userFootDOList = userFootMapper.selectList
-                                             (new QueryWrapper<UserFootDO>()
-                                                     .eq("document_id", articleId)
-                                                     .eq("like_stat", 1));
-            List<Long> likedUserIds = userFootDOList
-                                        .stream()
-                                        .map(userFootDO -> userFootDO.getUserId())
-                                        .collect(Collectors.toList());
-            if (likedUserIds != null && !likedUserIds.isEmpty()) {
-                // 把查出来的历史点赞用户，一次性塞进 Redis 里恢复现场
+            List<UserFootDO> userFootDOList = userFootMapper.selectList(
+                    new QueryWrapper<UserFootDO>()
+                            .eq("document_id", articleId)
+                            .eq("like_stat", 1)
+            );
+            List<Long> likedUserIds = userFootDOList.stream()
+                    .map(UserFootDO::getUserId)
+                    .collect(Collectors.toList());
+            if (!likedUserIds.isEmpty()) {
                 redisTemplate.opsForSet().add(likeKey, likedUserIds.toArray());
-                // 设置点赞 key 的过期时间：长过期时间 30 天
                 redisTemplate.expire(likeKey, 30, TimeUnit.DAYS);
             }
         }
-        //添加到set中，返回1表示添加成功（点赞成功），
-        //返回0表示添加失败（已经点过赞了），所以是取消点赞，删除
+
         Long addResult = redisTemplate.opsForSet().add(likeKey, currentUserId);
-        Long likeStat = addResult;
-        if(Long.valueOf(0).equals(addResult)) {
+        Long likeStat = Long.valueOf(1L).equals(addResult) ? 1L : 0L;
+        if (Long.valueOf(0L).equals(likeStat)) {
             redisTemplate.opsForSet().remove(likeKey, currentUserId);
         }
-        // 动态续期：每次点赞/取消点赞操作后刷新过期时间，长过期时间 30 天
         redisTemplate.expire(likeKey, 30, TimeUnit.DAYS);
-        //点赞关系数据用MQ实现异步单条落库
+
         RedisLikeToDBMessage redisLikeToDBMessage = RedisLikeToDBMessage.builder()
                 .userId(currentUserId)
                 .documentId(articleId)
+                .documentUserId(article.getUserId())
                 .readStat(1)
                 .likeStat(likeStat.intValue())
                 .build();
-        taskExecutor.execute(() ->{
+        taskExecutor.execute(() -> {
             try {
                 String message = UUID.randomUUID().toString();
                 CorrelationData correlationData = new CorrelationData(message);
-                rabbitTemplate.convertAndSend("article.direct","article.like",redisLikeToDBMessage
-                        ,msg -> {msg.getMessageProperties().setCorrelationId(message);
-                                 // MOD: set AMQP messageId so consumer idempotency can use it first.
-                                 msg.getMessageProperties().setMessageId(message);
-                                 return msg;
-                },correlationData);
-                log.info("发送点赞消息成功，消息ID：{}",message);
+                rabbitTemplate.convertAndSend("article.direct", "article.like", redisLikeToDBMessage,
+                        msg -> {
+                            msg.getMessageProperties().setCorrelationId(message);
+                            msg.getMessageProperties().setMessageId(message);
+                            return msg;
+                        }, correlationData);
             } catch (Exception e) {
-                log.error("发送点赞消息失败，articleId: {}, userId: {}, error: {}", articleId, currentUserId, e.getMessage(), e);
-                // TODO: 可考虑添加重试机制或将失败记录写入数据库，后续补偿处理
-                // 注意：此时 Redis 已更新，但 DB 未更新，存在数据不一致风险
+                log.error("send like message failed, articleId={}, userId={}", articleId, currentUserId, e);
             }
         });
 
         return ArticleLikeVO.builder()
-                .likeCount(redisTemplate.opsForSet().size(likeKey))//总条数
+                .likeCount(redisTemplate.opsForSet().size(likeKey))
                 .likeStat(likeStat)
                 .build();
+    }
+
+    /**
+     * 切换文章收藏状态，并通过 MQ 异步落库。
+     */
+    @Override
+    public ArticleCollectVO collectArticle(Long articleId) {
+        ArticleDO article = requireApprovedArticle(articleId);
+        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        String collectKey = RedisConstants.TECH_COMMUNITY_ARTICLE_COLLECT + articleId;
+        if (Boolean.FALSE.equals(redisTemplate.hasKey(collectKey))) {
+            List<UserFootDO> userFootDOList = userFootMapper.selectList(
+                    new QueryWrapper<UserFootDO>()
+                            .eq("document_id", articleId)
+                            .eq("collection_stat", 1)
+            );
+            List<Long> collectedUserIds = userFootDOList.stream()
+                    .map(UserFootDO::getUserId)
+                    .collect(Collectors.toList());
+            if (!collectedUserIds.isEmpty()) {
+                redisTemplate.opsForSet().add(collectKey, collectedUserIds.toArray());
+                redisTemplate.expire(collectKey, 30, TimeUnit.DAYS);
+            }
+        }
+
+        Long addResult = redisTemplate.opsForSet().add(collectKey, currentUserId);
+        Long collectionStat = Long.valueOf(1L).equals(addResult) ? 1L : 0L;
+        if (Long.valueOf(0L).equals(collectionStat)) {
+            redisTemplate.opsForSet().remove(collectKey, currentUserId);
+        }
+        redisTemplate.expire(collectKey, 30, TimeUnit.DAYS);
+
+        RedisCollectToDBMessage redisCollectToDBMessage = RedisCollectToDBMessage.builder()
+                .userId(currentUserId)
+                .documentId(articleId)
+                .documentUserId(article.getUserId())
+                .readStat(1)
+                .collectionStat(collectionStat.intValue())
+                .build();
+        taskExecutor.execute(() -> {
+            try {
+                String message = UUID.randomUUID().toString();
+                CorrelationData correlationData = new CorrelationData(message);
+                rabbitTemplate.convertAndSend("article.direct", "article.collect", redisCollectToDBMessage,
+                        msg -> {
+                            msg.getMessageProperties().setCorrelationId(message);
+                            msg.getMessageProperties().setMessageId(message);
+                            return msg;
+                        }, correlationData);
+            } catch (Exception e) {
+                log.error("send collect message failed, articleId={}, userId={}", articleId, currentUserId, e);
+            }
+        });
+
+        return ArticleCollectVO.builder()
+                .collectionCount(redisTemplate.opsForSet().size(collectKey))
+                .collectionStat(collectionStat)
+                .build();
+    }
+
+    /**
+     * 发送文章审核消息。
+     */
+    private void sendPublishMessage(Long articleId, ArticlePublishMessage message) {
+        try {
+            String messageId = UUID.randomUUID().toString();
+            CorrelationData correlationData = new CorrelationData(messageId);
+            rabbitTemplate.convertAndSend("article.direct", "article.publish.review", message, msg -> {
+                msg.getMessageProperties().setMessageId(messageId);
+                return msg;
+            }, correlationData);
+            log.info("publish review message sent, articleId={}, messageId={}", articleId, messageId);
+        } catch (Exception e) {
+            log.error("send publish review message failed, articleId={}", articleId, e);
+        }
+    }
+
+    /**
+     * 为文章列表补充作者名、封面和附件统计信息。
+     */
+    private List<ArticleListVO> enrichArticleList(List<ArticleDO> articles) {
+        if (CollectionUtils.isEmpty(articles)) {
+            return Collections.emptyList();
+        }
+
+        List<Long> articleIds = articles.stream().map(ArticleDO::getId).collect(Collectors.toList());
+        Map<Long, Long> attachmentCountMap = articleAttachmentService.countBoundAttachments(articleIds);
+        Map<Long, String> authorNameMap = loadAuthorNameMap(articles.stream()
+                .map(ArticleDO::getUserId)
+                .collect(Collectors.toList()));
+
+        List<ArticleListVO> result = new ArrayList<>(articles.size());
+        for (ArticleDO article : articles) {
+            long attachmentCount = attachmentCountMap.getOrDefault(article.getId(), 0L);
+            ArticleListVO vo = new ArticleListVO();
+            vo.setArticleId(article.getId());
+            vo.setTitle(article.getTitle());
+            vo.setSummary(article.getSummary());
+            vo.setAuthorName(authorNameMap.get(article.getUserId()));
+            vo.setCreateTime(formatTime(article.getCreateTime()));
+            vo.setCoverUrl(article.getPicture());
+            vo.setAttachmentCount(attachmentCount);
+            vo.setHasAttachment(attachmentCount > 0);
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 批量加载作者名称映射。
+     */
+    private Map<Long, String> loadAuthorNameMap(List<Long> userIds) {
+        if (CollectionUtils.isEmpty(userIds)) {
+            return Collections.emptyMap();
+        }
+        List<Long> uniqueUserIds = userIds.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (CollectionUtils.isEmpty(uniqueUserIds)) {
+            return Collections.emptyMap();
+        }
+        List<UserDO> users = userMapper.selectBatchIds(uniqueUserIds);
+        Map<Long, String> authorMap = new LinkedHashMap<>();
+        for (UserDO user : users) {
+            authorMap.put(user.getId(), user.getUsername());
+        }
+        return authorMap;
+    }
+
+    /**
+     * 从附件列表中挑选封面图 URL。
+     */
+    private String resolveCoverUrl(List<ArticleAttachmentDO> attachments) {
+        if (CollectionUtils.isEmpty(attachments)) {
+            return null;
+        }
+        for (ArticleAttachmentDO attachment : attachments) {
+            if (attachment.getContentType() != null && attachment.getContentType().startsWith("image/")) {
+                return attachment.getUrl();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 清理文章所有读侧数据。
+     */
+    private void clearArticleReadSide(Long articleId) {
+        try {
+            clearArticleCache(articleId);
+        } catch (Exception e) {
+            log.error("clear article cache failed, articleId={}", articleId, e);
+        }
+        try {
+            removeArticleFromTimeline(articleId);
+        } catch (Exception e) {
+            log.error("remove article from timeline failed, articleId={}", articleId, e);
+        }
+        try {
+            removeArticleFromSearch(articleId);
+        } catch (Exception e) {
+            log.error("remove article from search failed, articleId={}", articleId, e);
+        }
+        try {
+            removeArticleFromKnowledgeBase(articleId);
+        } catch (Exception e) {
+            log.error("remove article from knowledge base failed, articleId={}", articleId, e);
+        }
+    }
+
+    /**
+     * 清理文章缓存。
+     */
+    private void clearArticleCache(Long articleId) {
+        redisTemplate.delete(List.of(
+                RedisConstants.TECH_COMMUNITY_ARTICLE + articleId,
+                RedisConstants.TECH_COMMUNITY_ARTICLE_DETAIL + articleId
+        ));
+    }
+
+    /**
+     * 从文章时间轴中移除文章。
+     */
+    private void removeArticleFromTimeline(Long articleId) {
+        redisTemplate.opsForZSet().remove(RedisConstants.TECH_COMMUNITY_ARTICLE_LIST, articleId.toString());
+    }
+
+    /**
+     * 从 ES 检索索引中移除文章。
+     */
+    private void removeArticleFromSearch(Long articleId) {
+        articleESRepository.deleteById(articleId);
+    }
+
+    /**
+     * 从知识库向量存储中移除文章。
+     */
+    private void removeArticleFromKnowledgeBase(Long articleId) {
+        articleEmbeddingService.deleteArticleEmbedding(articleId);
+    }
+
+    /**
+     * 注册事务提交后的异步回调。
+     */
+    private void registerAfterCommit(Runnable runnable) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                taskExecutor.execute(runnable);
+            }
+        });
+    }
+
+    /**
+     * 校验文章存在且归当前登录用户所有。
+     */
+    private ArticleDO requireOwnedArticle(Long articleId) {
+        ArticleDO article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new BusinessException(StatusEnum.ARTICLE_NOT_FOUND);
+        }
+        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        if (!Objects.equals(article.getUserId(), currentUserId)) {
+            throw new BusinessException(StatusEnum.ARTICLE_ACCESS_DENIED);
+        }
+        return article;
+    }
+
+    /**
+     * 校验文章存在且已审核通过。
+     */
+    private ArticleDO requireApprovedArticle(Long articleId) {
+        ArticleDO article = articleMapper.selectById(articleId);
+        if (article == null || !Objects.equals(article.getStatus(), ArticleStatusConstants.APPROVED)) {
+            throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
+        return article;
+    }
+
+    /**
+     * 格式化时间字段。
+     */
+    private String formatTime(LocalDateTime time) {
+        return time == null ? null : TIME_FORMATTER.format(time);
     }
 }

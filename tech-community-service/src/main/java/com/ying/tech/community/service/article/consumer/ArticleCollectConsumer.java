@@ -5,9 +5,9 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.rabbitmq.client.Channel;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
-import com.ying.tech.community.service.notifyMsg.message.ArticleLikeNotifyMessage;
+import com.ying.tech.community.service.notifyMsg.message.ArticleCollectNotifyMessage;
 import com.ying.tech.community.service.user.entity.UserFootDO;
-import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
+import com.ying.tech.community.service.user.message.RedisCollectToDBMessage;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -24,89 +24,72 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 文章点赞消息消费者。
- *
- * <p>负责消费点赞/取消点赞消息，完成点赞关系落库、文章点赞数同步，以及点赞通知投递。
+ * 文章收藏落库消费者。
+ * 负责把 Redis 中的收藏状态同步到关系库，同时维护文章收藏数并触发站内通知。
  */
 @Component
 @Slf4j
-public class ArticleLikeConsumer {
-    /** 幂等键前缀，优先基于 messageId 拦截重复消息。 */
-    private static final String IDEMPOTENT_KEY_PREFIX = "mq:idempotent:article.like:";
-    /** 基于 messageId 的幂等标记过期时间，单位：小时。 */
+public class ArticleCollectConsumer {
+    private static final String IDEMPOTENT_KEY_PREFIX = "mq:idempotent:article.collect:";
     private static final long IDEMPOTENT_TTL_HOURS = 24;
-    /** messageId 缺失时兜底幂等键的有效期，单位：分钟。 */
     private static final long IDEMPOTENT_FALLBACK_TTL_MINUTES = 5;
-    /** user_foot 表中的文章类型值。 */
     private static final int DOCUMENT_TYPE_ARTICLE = 1;
 
-    /** Redis 用于幂等标记和行为缓存。 */
     private final RedisTemplate<String, Object> redisTemplate;
-    /** 用户足迹 Mapper，用于同步点赞关系。 */
     private final UserFootMapper userFootMapper;
-    /** 文章 Mapper，用于同步点赞计数。 */
     private final ArticleMapper articleMapper;
-    /** RabbitMQ 模板，用于投递点赞通知消息。 */
     private final RabbitTemplate rabbitTemplate;
 
-    public ArticleLikeConsumer(RedisTemplate<String, Object> redisTemplate,
-                               UserFootMapper userFootMapper,
-                               ArticleMapper articleMapper,
-                               RabbitTemplate rabbitTemplate) {
+    public ArticleCollectConsumer(RedisTemplate<String, Object> redisTemplate,
+                                  UserFootMapper userFootMapper,
+                                  ArticleMapper articleMapper,
+                                  RabbitTemplate rabbitTemplate) {
         this.redisTemplate = redisTemplate;
         this.userFootMapper = userFootMapper;
         this.articleMapper = articleMapper;
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    /**
-     * 消费点赞消息并完成落库。
-     *
-     * @param message     点赞消息
-     * @param channel     RabbitMQ Channel，用于手动 ACK
-     * @param deliveryTag 当前消息投递标签
-     * @param messageId   消息唯一 ID，用于幂等控制
-     * @throws IOException RabbitMQ ACK 失败时抛出
-     */
-    @RabbitListener(queues = "article.like.queue", containerFactory = "manualAckListenerContainerFactory")
-    public void handleArticleLike(RedisLikeToDBMessage message,
-                                  Channel channel,
-                                  @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag,
-                                  @Header(value = AmqpHeaders.MESSAGE_ID, required = false) String messageId)
+    @RabbitListener(queues = "article.collect.queue", containerFactory = "manualAckListenerContainerFactory")
+    public void handleArticleCollect(RedisCollectToDBMessage message,
+                                     Channel channel,
+                                     @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag,
+                                     @Header(value = AmqpHeaders.MESSAGE_ID, required = false) String messageId)
             throws IOException {
-        log.info("[ArticleLike] receive, userId={}, documentId={}, documentUserId={}, readStat={}, likeStat={}",
-                message.getUserId(), message.getDocumentId(), message.getDocumentUserId(), message.getReadStat(), message.getLikeStat());
+        // 消息里同时携带操作者、文章和文章作者信息，便于一次消费完成全流程处理。
+        log.info("[ArticleCollect] receive, userId={}, documentId={}, documentUserId={}, readStat={}, collectionStat={}",
+                message.getUserId(), message.getDocumentId(), message.getDocumentUserId(), message.getReadStat(), message.getCollectionStat());
 
         String idempotentKey;
         long idempotentTtl;
         TimeUnit idempotentTtlUnit;
+        // 优先使用 MQ messageId 做幂等；如果消息头缺失，则退化为业务键兜底。
         if (messageId != null && !messageId.isBlank()) {
-            // 优先使用 MQ messageId 做幂等控制。
             idempotentKey = IDEMPOTENT_KEY_PREFIX + messageId;
             idempotentTtl = IDEMPOTENT_TTL_HOURS;
             idempotentTtlUnit = TimeUnit.HOURS;
         } else {
-            // messageId 缺失时退化为业务键兜底，尽量避免短时间重复消费。
-            idempotentKey = IDEMPOTENT_KEY_PREFIX + "biz:" + message.getUserId() + ":" + message.getDocumentId() + ":" + message.getLikeStat();
+            idempotentKey = IDEMPOTENT_KEY_PREFIX + "biz:" + message.getUserId() + ":" + message.getDocumentId() + ":" + message.getCollectionStat();
             idempotentTtl = IDEMPOTENT_FALLBACK_TTL_MINUTES;
             idempotentTtlUnit = TimeUnit.MINUTES;
         }
 
         Boolean isNew = redisTemplate.opsForValue()
-                .setIfAbsent(idempotentKey, String.valueOf(message.getLikeStat()), idempotentTtl, idempotentTtlUnit);
+                .setIfAbsent(idempotentKey, String.valueOf(message.getCollectionStat()), idempotentTtl, idempotentTtlUnit);
         if (Boolean.FALSE.equals(isNew)) {
-            log.warn("[ArticleLike] duplicate message ignored, messageId={}", messageId);
+            log.warn("[ArticleCollect] duplicate message ignored, messageId={}", messageId);
             channel.basicAck(deliveryTag, false);
             return;
         }
 
         try {
+            // 先同步用户行为，再同步聚合计数，最后异步投递通知消息。
             syncUserFoot(message);
-            syncArticleLikeCount(message);
-            publishLikeNotify(message);
-            log.info("[ArticleLike] completed, messageId={}", messageId);
+            syncArticleCollectionCount(message);
+            publishCollectNotify(message);
+            log.info("[ArticleCollect] completed, messageId={}", messageId);
         } catch (Exception e) {
-            log.error("[ArticleLike] failed, messageId={}, error={}", messageId, e.getMessage(), e);
+            log.error("[ArticleCollect] failed, messageId={}, error={}", messageId, e.getMessage(), e);
             throw new RuntimeException(e);
         }
 
@@ -114,13 +97,12 @@ public class ArticleLikeConsumer {
     }
 
     /**
-     * 同步用户与文章之间的点赞关系。
-     *
-     * <p>先尝试更新，未命中时再插入；若插入阶段遇到唯一键竞争，则回退为更新。
+     * 同步用户与文章之间的收藏关系。
+     * 这里采用“先更新，更新不到再插入”的 upsert 思路，避免重复收藏场景下产生多条记录。
      */
-    private void syncUserFoot(RedisLikeToDBMessage message) {
+    private void syncUserFoot(RedisCollectToDBMessage message) {
         UpdateWrapper<UserFootDO> wrapper = new UpdateWrapper<UserFootDO>()
-                .set("like_stat", message.getLikeStat())
+                .set("collection_stat", message.getCollectionStat())
                 .set("read_stat", defaultStat(message.getReadStat()))
                 .eq("user_id", message.getUserId())
                 .eq("document_id", message.getDocumentId());
@@ -129,16 +111,18 @@ public class ArticleLikeConsumer {
             return;
         }
 
+        // 更新失败通常表示首次收藏，需要补建用户足迹记录。
         UserFootDO userFootDO = new UserFootDO();
         BeanUtil.copyProperties(message, userFootDO);
         userFootDO.setDocumentType(DOCUMENT_TYPE_ARTICLE);
-        userFootDO.setCollectionStat(0);
+        userFootDO.setLikeStat(0);
         userFootDO.setCommentStat(0);
         userFootDO.setReadStat(defaultStat(userFootDO.getReadStat()));
-        userFootDO.setLikeStat(defaultStat(userFootDO.getLikeStat()));
+        userFootDO.setCollectionStat(defaultStat(userFootDO.getCollectionStat()));
         try {
             userFootMapper.insert(userFootDO);
         } catch (DuplicateKeyException duplicateKeyException) {
+            // 并发写入下可能有其他消费者先插入，捕获唯一键冲突后重试更新即可。
             int retryUpdateRow = userFootMapper.update(null, wrapper);
             if (retryUpdateRow == 0) {
                 throw duplicateKeyException;
@@ -147,33 +131,33 @@ public class ArticleLikeConsumer {
     }
 
     /**
-     * 同步文章主表中的点赞总数。
+     * 同步文章收藏数。
+     * 增加收藏时直接 +1，取消收藏时要确保计数不会被扣成负数。
      */
-    private void syncArticleLikeCount(RedisLikeToDBMessage message) {
+    private void syncArticleCollectionCount(RedisCollectToDBMessage message) {
         UpdateWrapper<ArticleDO> wrapper = new UpdateWrapper<ArticleDO>()
                 .eq("id", message.getDocumentId());
-        if (Integer.valueOf(1).equals(message.getLikeStat())) {
-            wrapper.setSql("like_count = COALESCE(like_count, 0) + 1");
+        if (Integer.valueOf(1).equals(message.getCollectionStat())) {
+            wrapper.setSql("collection_count = COALESCE(collection_count, 0) + 1");
         } else {
-            wrapper.setSql("like_count = CASE WHEN COALESCE(like_count, 0) <= 0 THEN 0 ELSE COALESCE(like_count, 0) - 1 END");
+            wrapper.setSql("collection_count = CASE WHEN COALESCE(collection_count, 0) <= 0 THEN 0 ELSE COALESCE(collection_count, 0) - 1 END");
         }
         articleMapper.update(null, wrapper);
     }
 
     /**
-     * 在点赞成功后投递通知消息。
-     *
-     * <p>取消点赞和给自己点赞都不会发送通知。
+     * 收藏成功后给文章作者发送通知。
+     * 只有“收藏”动作才通知，取消收藏和自己收藏自己的文章都直接跳过。
      */
-    private void publishLikeNotify(RedisLikeToDBMessage message) {
-        if (!Integer.valueOf(1).equals(message.getLikeStat())) {
+    private void publishCollectNotify(RedisCollectToDBMessage message) {
+        if (!Integer.valueOf(1).equals(message.getCollectionStat())) {
             return;
         }
         if (message.getDocumentUserId() == null || message.getDocumentUserId().equals(message.getUserId())) {
             return;
         }
 
-        ArticleLikeNotifyMessage notifyMessage = ArticleLikeNotifyMessage.builder()
+        ArticleCollectNotifyMessage notifyMessage = ArticleCollectNotifyMessage.builder()
                 .articleId(message.getDocumentId())
                 .notifyUserId(message.getDocumentUserId())
                 .operateUserId(message.getUserId())
@@ -181,18 +165,15 @@ public class ArticleLikeConsumer {
         try {
             String notifyMessageId = UUID.randomUUID().toString();
             CorrelationData correlationData = new CorrelationData(notifyMessageId);
-            rabbitTemplate.convertAndSend("notify.direct", "article.like.notify", notifyMessage, msg -> {
+            rabbitTemplate.convertAndSend("notify.direct", "article.collect.notify", notifyMessage, msg -> {
                 msg.getMessageProperties().setMessageId(notifyMessageId);
                 return msg;
             }, correlationData);
         } catch (Exception e) {
-            log.error("[ArticleLike] notify publish failed, documentId={}, userId={}", message.getDocumentId(), message.getUserId(), e);
+            log.error("[ArticleCollect] notify publish failed, documentId={}, userId={}", message.getDocumentId(), message.getUserId(), e);
         }
     }
 
-    /**
-     * 将空状态统一转换为 0，便于落库。
-     */
     private int defaultStat(Integer stat) {
         return stat == null ? 0 : stat;
     }

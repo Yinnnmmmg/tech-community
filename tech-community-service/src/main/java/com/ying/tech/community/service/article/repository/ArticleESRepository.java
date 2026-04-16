@@ -2,6 +2,7 @@ package com.ying.tech.community.service.article.repository;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Refresh;
+import co.elastic.clients.elasticsearch._types.Result;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.*;
@@ -73,12 +74,41 @@ public class ArticleESRepository {
     }
 
     /**
+     * 按文章 ID 删除 ES 文档。
+     *
+     * <p>若目标文档不存在，仅记录日志，不视为异常。
+     */
+    public void deleteById(Long articleId) {
+        if (articleId == null) {
+            return;
+        }
+        try {
+            DeleteRequest request = DeleteRequest.of(d -> d
+                    .index(INDEX_NAME)
+                    .id(articleId.toString())
+                    .refresh(Refresh.WaitFor)
+            );
+            DeleteResponse response = elasticsearchClient.delete(request);
+            if (response.result() == Result.NotFound) {
+                log.info("document not found in ES, skip delete, id={}", articleId);
+                return;
+            }
+            log.info("document deleted from ES, id={}", articleId);
+        } catch (IOException e) {
+            log.error("delete document failed, id={}", articleId, e);
+            throw new RuntimeException("delete document failed", e);
+        }
+    }
+
+    /**
      * 执行带高亮的文章搜索。
      *
-     * 高亮规则：
-     * 1. title 返回完整高亮内容（numberOfFragments=0）。
-     * 2. content 返回一个片段（fragmentSize=180，numberOfFragments=1）。
-     * 3. 返回结果包含原始文档、标题高亮和内容高亮。
+     * <p>高亮规则：
+     * <ol>
+     *   <li>title 返回完整高亮内容（numberOfFragments=0）；</li>
+     *   <li>content 返回一个片段（fragmentSize=180，numberOfFragments=1）；</li>
+     *   <li>返回结果同时携带原始文档、标题高亮和内容高亮。</li>
+     * </ol>
      */
     public HighlightSearchResult searchWithHighlight(Query query, Integer from, Integer size) {
         try {
@@ -140,7 +170,9 @@ public class ArticleESRepository {
     }
 
 
-    //两个内部类，其他地方不需要使用， 这样可以强关联性和内聚性
+    /**
+     * 高亮搜索结果包装对象。
+     */
     @Getter
     @AllArgsConstructor
     public static class HighlightSearchResult {
@@ -149,6 +181,9 @@ public class ArticleESRepository {
 
     }
 
+    /**
+     * 单条高亮搜索记录。
+     */
     @Getter
     @AllArgsConstructor
     public static class HighlightArticleRecord {
@@ -158,4 +193,3 @@ public class ArticleESRepository {
 
     }
 }
-

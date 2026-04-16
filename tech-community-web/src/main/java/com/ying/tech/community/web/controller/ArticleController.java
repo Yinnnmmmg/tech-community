@@ -5,9 +5,11 @@ import com.ying.tech.community.core.common.CursorPageResult;
 import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.service.article.req.ArticlePostReq;
+import com.ying.tech.community.service.article.req.ArticleUpdateReq;
 import com.ying.tech.community.service.article.service.ArticleDetailService;
 import com.ying.tech.community.service.article.service.ArticleSearchService;
 import com.ying.tech.community.service.article.service.ArticleService;
+import com.ying.tech.community.service.article.vo.ArticleCollectVO;
 import com.ying.tech.community.service.article.vo.ArticleDetailVO;
 import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
@@ -18,6 +20,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 
+/**
+ * 文章相关接口。
+ */
 @Slf4j
 @RestController
 @RequestMapping("/article")
@@ -65,6 +70,19 @@ public class ArticleController {
         return Result.success(articleLikeVO);
     }
 
+    /**
+     * 收藏接口。
+     * POST /article/collect
+     *
+     * @param articleId 文章 ID
+     * @return 收藏结果
+     */
+    @PostMapping("/collect")
+    public Result<ArticleCollectVO> collectArticle(@RequestParam Long articleId) {
+        ArticleCollectVO articleCollectVO = articleService.collectArticle(articleId);
+        return Result.success(articleCollectVO);
+    }
+
 
     /**
      * 发布文章接口
@@ -75,6 +93,34 @@ public class ArticleController {
 
         Long articleId = articleService.publishArticle(articlePostReq);
         return Result.success(articleId);
+    }
+
+    /**
+     * 更新文章接口。
+     * PUT /article/{articleId}
+     *
+     * @param articleId         文章 ID
+     * @param articleUpdateReq  更新参数
+     * @return 更新后的文章 ID
+     */
+    @PutMapping("/{articleId}")
+    public Result<Long> updateArticle(@PathVariable Long articleId,
+                                      @Validated @RequestBody ArticleUpdateReq articleUpdateReq) {
+        Long updatedArticleId = articleService.updateArticle(articleId, articleUpdateReq);
+        return Result.success(updatedArticleId);
+    }
+
+    /**
+     * 删除文章接口。
+     * DELETE /article/{articleId}
+     *
+     * @param articleId 文章 ID
+     * @return 删除结果
+     */
+    @DeleteMapping("/{articleId}")
+    public Result<Boolean> deleteArticle(@PathVariable Long articleId) {
+        articleService.deleteArticle(articleId);
+        return Result.success(Boolean.TRUE);
     }
 
     /**

@@ -55,9 +55,15 @@ public class RabbitMQConfig {
     public static final String ARTICLE_PUBLISH_ES_QUEUE = "article.publish.es.queue";
     public static final String TIMELINE_REBUILD_QUEUE   = "timeline.rebuild.queue";
     public static final String ARTICLE_LIKE_QUEUE  = "article.like.queue";
+    // 收藏及通知相关主队列。
+    public static final String ARTICLE_COLLECT_QUEUE = "article.collect.queue";
+    public static final String ARTICLE_LIKE_NOTIFY_QUEUE = "article.like.notify.queue";
+    public static final String ARTICLE_COLLECT_NOTIFY_QUEUE = "article.collect.notify.queue";
+    public static final String USER_FOLLOW_NOTIFY_QUEUE = "user.follow.notify.queue";
 
     public static final String NOTIFY_PUBLISH_FAIL_QUEUE = "notify.publish.fail.queue";
 
+    // AI 向量同步主队列。
     public static final String AI_EMBEDDING_QUEUE = "ai.embedding.queue";
 
     // ===================== 死信队列 =====================
@@ -67,21 +73,37 @@ public class RabbitMQConfig {
     public static final String ARTICLE_PUBLISH_ES_DLQ = "article.publish.es.dlq";
     public static final String TIMELINE_REBUILD_DLQ     = "timeline.rebuild.dlq";
     public static final String ARTICLE_LIKE_DLQ      = "article.like.dlq";
+    // 收藏及通知相关死信队列。
+    public static final String ARTICLE_COLLECT_DLQ = "article.collect.dlq";
+    public static final String ARTICLE_LIKE_NOTIFY_DLQ = "article.like.notify.dlq";
+    public static final String ARTICLE_COLLECT_NOTIFY_DLQ = "article.collect.notify.dlq";
+    public static final String USER_FOLLOW_NOTIFY_DLQ = "user.follow.notify.dlq";
+    // AI 向量同步死信队列。
     public static final String AI_EMBEDDING_DLQ = "ai.embedding.dlq";
 
     // ===================== 路由键 =====================
     private static final String ARTICLE_PUBLISH_REVIEW_KEY = "article.publish.review";
     private static final String TIMELINE_REBUILD_KEY = "timeline.rebuild";
     private static final String ARTICLE_LIKE_KEY  = "article.like";
+    // 收藏及通知相关路由键。
+    private static final String ARTICLE_COLLECT_KEY = "article.collect";
+    private static final String ARTICLE_LIKE_NOTIFY_KEY = "article.like.notify";
+    private static final String ARTICLE_COLLECT_NOTIFY_KEY = "article.collect.notify";
+    private static final String USER_FOLLOW_NOTIFY_KEY = "user.follow.notify";
     private static final String ARTICLE_PUBLISH_REVIEW_DEAD_KEY = "article.publish.review.dead";
     private static final String ARTICLE_PUBLISH_TIMELINE_DEAD_KEY = "article.publish.timeline.dead";
     private static final String ARTICLE_PUBLISH_NOTIFY_DEAD_KEY = "article.publish.notify.dead";
     private static final String ARTICLE_PUBLISH_ES_DEAD_KEY = "article.publish.es.dead";
     private static final String TIMELINE_REBUILD_DEAD_KEY = "timeline.rebuild.dead";
     private static final String ARTICLE_LIKE_DEAD_KEY  = "article.like.dead";
+    private static final String ARTICLE_COLLECT_DEAD_KEY = "article.collect.dead";
+    private static final String ARTICLE_LIKE_NOTIFY_DEAD_KEY = "article.like.notify.dead";
+    private static final String ARTICLE_COLLECT_NOTIFY_DEAD_KEY = "article.collect.notify.dead";
+    private static final String USER_FOLLOW_NOTIFY_DEAD_KEY = "user.follow.notify.dead";
 
     private static final String NOTIFY_PUBLISH_FAIL_KEY = "notify.publish.fail";
 
+    // AI 向量同步路由键。
     private static final String AI_EMBEDDING_KEY = "ai.embedding";
     private static final String AI_EMBEDDING_DEAD_KEY = "ai.embedding.dead";
 
@@ -200,6 +222,38 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public Queue articleCollectQueue() {
+        return QueueBuilder.durable(ARTICLE_COLLECT_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_COLLECT_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue articleLikeNotifyQueue() {
+        return QueueBuilder.durable(ARTICLE_LIKE_NOTIFY_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_LIKE_NOTIFY_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue articleCollectNotifyQueue() {
+        return QueueBuilder.durable(ARTICLE_COLLECT_NOTIFY_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ARTICLE_COLLECT_NOTIFY_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue userFollowNotifyQueue() {
+        return QueueBuilder.durable(USER_FOLLOW_NOTIFY_QUEUE)
+                .withArgument("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", USER_FOLLOW_NOTIFY_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
     public Queue notifyPublishFailQueue(){
         return QueueBuilder.durable(NOTIFY_PUBLISH_FAIL_QUEUE)
                 .build();
@@ -242,6 +296,26 @@ public class RabbitMQConfig {
     @Bean
     public Queue articleLikeDlq() {
         return QueueBuilder.durable(ARTICLE_LIKE_DLQ).build();
+    }
+
+    @Bean
+    public Queue articleCollectDlq() {
+        return QueueBuilder.durable(ARTICLE_COLLECT_DLQ).build();
+    }
+
+    @Bean
+    public Queue articleLikeNotifyDlq() {
+        return QueueBuilder.durable(ARTICLE_LIKE_NOTIFY_DLQ).build();
+    }
+
+    @Bean
+    public Queue articleCollectNotifyDlq() {
+        return QueueBuilder.durable(ARTICLE_COLLECT_NOTIFY_DLQ).build();
+    }
+
+    @Bean
+    public Queue userFollowNotifyDlq() {
+        return QueueBuilder.durable(USER_FOLLOW_NOTIFY_DLQ).build();
     }
 
     @Bean
@@ -290,6 +364,38 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(articleLikeQueue)
                 .to(articleDirectExchange)
                 .with(ARTICLE_LIKE_KEY);
+    }
+
+    @Bean
+    public Binding articleCollectBinding(Queue articleCollectQueue,
+                                         DirectExchange articleDirectExchange) {
+        return BindingBuilder.bind(articleCollectQueue)
+                .to(articleDirectExchange)
+                .with(ARTICLE_COLLECT_KEY);
+    }
+
+    @Bean
+    public Binding articleLikeNotifyBinding(Queue articleLikeNotifyQueue,
+                                            DirectExchange notifyDirectExchange) {
+        return BindingBuilder.bind(articleLikeNotifyQueue)
+                .to(notifyDirectExchange)
+                .with(ARTICLE_LIKE_NOTIFY_KEY);
+    }
+
+    @Bean
+    public Binding articleCollectNotifyBinding(Queue articleCollectNotifyQueue,
+                                               DirectExchange notifyDirectExchange) {
+        return BindingBuilder.bind(articleCollectNotifyQueue)
+                .to(notifyDirectExchange)
+                .with(ARTICLE_COLLECT_NOTIFY_KEY);
+    }
+
+    @Bean
+    public Binding userFollowNotifyBinding(Queue userFollowNotifyQueue,
+                                           DirectExchange notifyDirectExchange) {
+        return BindingBuilder.bind(userFollowNotifyQueue)
+                .to(notifyDirectExchange)
+                .with(USER_FOLLOW_NOTIFY_KEY);
     }
 
     @Bean
@@ -354,6 +460,38 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(articleLikeDlq)
                 .to(articleDlxExchange)
                 .with(ARTICLE_LIKE_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding articleCollectDlqBinding(Queue articleCollectDlq,
+                                            DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articleCollectDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_COLLECT_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding articleLikeNotifyDlqBinding(Queue articleLikeNotifyDlq,
+                                               DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articleLikeNotifyDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_LIKE_NOTIFY_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding articleCollectNotifyDlqBinding(Queue articleCollectNotifyDlq,
+                                                  DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(articleCollectNotifyDlq)
+                .to(articleDlxExchange)
+                .with(ARTICLE_COLLECT_NOTIFY_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding userFollowNotifyDlqBinding(Queue userFollowNotifyDlq,
+                                              DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(userFollowNotifyDlq)
+                .to(articleDlxExchange)
+                .with(USER_FOLLOW_NOTIFY_DEAD_KEY);
     }
 
     @Bean

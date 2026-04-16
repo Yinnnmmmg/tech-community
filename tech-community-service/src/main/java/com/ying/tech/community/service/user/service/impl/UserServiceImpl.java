@@ -1,93 +1,508 @@
 package com.ying.tech.community.service.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.ying.tech.community.service.user.req.UserSaveReq;
-import com.ying.tech.community.service.user.entity.UserDO;
-import com.ying.tech.community.service.user.repository.mapper.UserMapper;
-import com.ying.tech.community.service.user.service.UserService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
+import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.core.utils.JWTUtils;
+import com.ying.tech.community.service.notifyMsg.message.UserFollowNotifyMessage;
+import com.ying.tech.community.service.user.entity.UserDO;
+import com.ying.tech.community.service.user.entity.UserInfoDO;
+import com.ying.tech.community.service.user.entity.UserRelationDO;
+import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserRelationMapper;
+import com.ying.tech.community.service.user.req.UserSaveReq;
+import com.ying.tech.community.service.user.service.UserService;
+import com.ying.tech.community.service.user.vo.FollowActionVO;
+import com.ying.tech.community.service.user.vo.FollowStatsVO;
+import com.ying.tech.community.service.user.vo.UserFollowListItemVO;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
+/**
+ * 用户服务实现。
+ *
+ * <p>负责注册登录、用户信息查询以及关注关系的增删查和消息通知。
+ */
+@Slf4j
 @Service
 public class UserServiceImpl implements UserService {
 
+    /** 已关注状态。 */
+    private static final int FOLLOW_STATE_FOLLOWED = 1;
+    /** 已取消关注状态。 */
+    private static final int FOLLOW_STATE_UNFOLLOWED = 2;
+    /** 通知交换机。 */
+    private static final String NOTIFY_EXCHANGE = "notify.direct";
+    /** 关注通知路由键。 */
+    private static final String FOLLOW_NOTIFY_ROUTING_KEY = "user.follow.notify";
+
     @Autowired
     private UserMapper userMapper;
+    @Autowired
+    private UserInfoMapper userInfoMapper;
+    @Autowired
+    private UserRelationMapper userRelationMapper;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
+    /**
+     * 根据用户名查询用户。
+     */
     @Override
     public UserDO getByUsername(String username) {
-        // 使用 MyBatis-Plus 的 Lambda 查询，防止字段名写错
         return userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
                 .eq(UserDO::getUsername, username));
     }
 
+    /**
+     * 用户注册。
+     *
+     * <p>校验用户名密码、检测重名后再对密码进行 MD5 加密并写入数据库。
+     */
     @Override
     public Long register(UserSaveReq req) {
-        // 1. 参数基本校验
         if (!StringUtils.hasText(req.getUsername()) || !StringUtils.hasText(req.getPassword())) {
-            throw new RuntimeException("用户名或密码不能为空");
+            throw new RuntimeException("\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u80fd\u4e3a\u7a7a");
         }
 
-        // 2. 检查用户名是否重复 (复用你之前写的查询方法)
         UserDO existUser = userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
                 .eq(UserDO::getUsername, req.getUsername()));
         if (existUser != null) {
             throw new BusinessException(StatusEnum.USER_EXISTS);
         }
 
-        // 3. 密码加密 (这里使用 Spring 自带的 MD5 工具)
-        // 比如：123456 -> e10adc3949ba59abbe56e057f20f883e
         String encodedPwd = DigestUtils.md5DigestAsHex(req.getPassword().getBytes(StandardCharsets.UTF_8));
 
-        // 4. 封装对象
         UserDO user = new UserDO();
-        user.setUsername(req.getUsername()); // 设置用户名
-        user.setPassword(encodedPwd); // 设置加密后的密码
-        user.setThirdAccountId(null); // 第三方账号 ID，如果是第三方登录才需要设置
-        user.setLoginType(0); // 登录类型：0-普通登录，1-第三方登录
-        user.setDeleted(0); // 0-未删除，1-已删除
-
-        // 5. 入库
+        user.setUsername(req.getUsername());
+        user.setPassword(encodedPwd);
+        user.setThirdAccountId(null);
+        user.setLoginType(0);
+        user.setDeleted(0);
         userMapper.insert(user);
-
-        // MyBatis-Plus 会自动把生成的 ID 回填到对象里
         return user.getId();
     }
 
+    /**
+     * 用户登录并返回 Token。
+     */
     @Override
     public String login(String username, String password) {
-        // 1. 判空
         if (!StringUtils.hasText(username) || !StringUtils.hasText(password)) {
-            throw new RuntimeException("用户名或密码不能为空");
+            throw new RuntimeException("\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u80fd\u4e3a\u7a7a");
         }
 
-        // 2. 查用户
         UserDO user = getByUsername(username);
         if (user == null) {
             throw new BusinessException(StatusEnum.USER_NOT_FOUND);
         }
 
-        // 3. 比对密码 (前端传来的密码加密后 == 数据库里的密码)
         String inputPwdEncoded = DigestUtils.md5DigestAsHex(password.getBytes(StandardCharsets.UTF_8));
         if (!inputPwdEncoded.equals(user.getPassword())) {
             throw new BusinessException(StatusEnum.USER_PWD_ERROR);
         }
 
-        // 4. 生成 Token
         return JWTUtils.createToken(user.getId());
     }
 
+    /**
+     * 获取用户信息。
+     */
     @Override
     public UserDO getUserInfo(Long userId) {
-        return userMapper.selectById(userId);
+        return requireUser(userId);
     }
 
+    /**
+     * 关注目标用户。
+     *
+     * <p>若关系不存在则插入，若已存在但处于取消状态则恢复，并在成功关注后投递通知。
+     */
+    @Override
+    public FollowActionVO followUser(Long targetUserId) {
+        Long currentUserId = getCurrentUserId();
+        validateTargetUser(targetUserId, currentUserId, true);
+
+        UserRelationDO relation = findRelation(targetUserId, currentUserId);
+        boolean notifyNeeded = false;
+        if (relation == null) {
+            UserRelationDO newRelation = UserRelationDO.builder()
+                    .userId(targetUserId)
+                    .followUserId(currentUserId)
+                    .followState(FOLLOW_STATE_FOLLOWED)
+                    .build();
+            try {
+                userRelationMapper.insert(newRelation);
+                notifyNeeded = true;
+            } catch (DuplicateKeyException duplicateKeyException) {
+                relation = findRelation(targetUserId, currentUserId);
+                if (relation == null) {
+                    throw duplicateKeyException;
+                }
+                if (!Objects.equals(relation.getFollowState(), FOLLOW_STATE_FOLLOWED)) {
+                    relation.setFollowState(FOLLOW_STATE_FOLLOWED);
+                    userRelationMapper.updateById(relation);
+                    notifyNeeded = true;
+                }
+            }
+        } else if (!Objects.equals(relation.getFollowState(), FOLLOW_STATE_FOLLOWED)) {
+            relation.setFollowState(FOLLOW_STATE_FOLLOWED);
+            userRelationMapper.updateById(relation);
+            notifyNeeded = true;
+        }
+
+        if (notifyNeeded) {
+            sendFollowNotify(currentUserId, targetUserId);
+        }
+
+        return FollowActionVO.builder()
+                .targetUserId(targetUserId)
+                .followed(Boolean.TRUE)
+                .build();
+    }
+
+    /**
+     * 取消关注目标用户。
+     */
+    @Override
+    public FollowActionVO unfollowUser(Long targetUserId) {
+        Long currentUserId = getCurrentUserId();
+        validateTargetUser(targetUserId, currentUserId, true);
+
+        UserRelationDO relation = findRelation(targetUserId, currentUserId);
+        if (relation != null && !Objects.equals(relation.getFollowState(), FOLLOW_STATE_UNFOLLOWED)) {
+            relation.setFollowState(FOLLOW_STATE_UNFOLLOWED);
+            userRelationMapper.updateById(relation);
+        }
+
+        return FollowActionVO.builder()
+                .targetUserId(targetUserId)
+                .followed(Boolean.FALSE)
+                .build();
+    }
+
+    /**
+     * 查询当前用户对目标用户的关注状态。
+     */
+    @Override
+    public FollowActionVO getFollowStatus(Long targetUserId) {
+        Long currentUserId = getCurrentUserId();
+        validateTargetUser(targetUserId, currentUserId, false);
+
+        boolean followed = !Objects.equals(currentUserId, targetUserId)
+                && isFollowing(currentUserId, targetUserId);
+        return FollowActionVO.builder()
+                .targetUserId(targetUserId)
+                .followed(followed)
+                .build();
+    }
+
+    /**
+     * 查询指定用户的关注和粉丝统计。
+     */
+    @Override
+    public FollowStatsVO getFollowStats(Long userId) {
+        validateUserId(userId);
+        requireUser(userId);
+
+        Long currentUserId = getCurrentUserId();
+        return FollowStatsVO.builder()
+                .followCount(countActiveFollows(userId))
+                .fanCount(countActiveFans(userId))
+                .followed(!Objects.equals(currentUserId, userId) && isFollowing(currentUserId, userId))
+                .build();
+    }
+
+    /**
+     * 分页查询指定用户的关注列表。
+     */
+    @Override
+    public PageResult<UserFollowListItemVO> getFollowList(Long userId, Integer page, Integer size) {
+        validatePage(page, size);
+        requireUser(userId);
+
+        Page<UserRelationDO> relationPage = userRelationMapper.selectPage(
+                new Page<>(page, size),
+                new LambdaQueryWrapper<UserRelationDO>()
+                        .eq(UserRelationDO::getFollowUserId, userId)
+                        .eq(UserRelationDO::getFollowState, FOLLOW_STATE_FOLLOWED)
+                        .orderByDesc(UserRelationDO::getUpdateTime)
+                        .orderByDesc(UserRelationDO::getId));
+
+        return buildUserRelationPage(relationPage, true);
+    }
+
+    /**
+     * 分页查询指定用户的粉丝列表。
+     */
+    @Override
+    public PageResult<UserFollowListItemVO> getFanList(Long userId, Integer page, Integer size) {
+        validatePage(page, size);
+        requireUser(userId);
+
+        Page<UserRelationDO> relationPage = userRelationMapper.selectPage(
+                new Page<>(page, size),
+                new LambdaQueryWrapper<UserRelationDO>()
+                        .eq(UserRelationDO::getUserId, userId)
+                        .eq(UserRelationDO::getFollowState, FOLLOW_STATE_FOLLOWED)
+                        .orderByDesc(UserRelationDO::getUpdateTime)
+                        .orderByDesc(UserRelationDO::getId));
+
+        return buildUserRelationPage(relationPage, false);
+    }
+
+    /**
+     * 将关注关系分页结果转换为前端展示对象。
+     */
+    private PageResult<UserFollowListItemVO> buildUserRelationPage(Page<UserRelationDO> relationPage, boolean followList) {
+        List<UserRelationDO> relations = relationPage.getRecords();
+        if (relations == null || relations.isEmpty()) {
+            return new PageResult<>(relationPage.getTotal(), Collections.emptyList());
+        }
+
+        List<Long> itemUserIds = relations.stream()
+                .map(relation -> followList ? relation.getUserId() : relation.getFollowUserId())
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<Long, UserDO> userMap = loadUserMap(itemUserIds);
+        Map<Long, UserInfoDO> userInfoMap = loadUserInfoMap(itemUserIds);
+        Set<Long> followedUserIds = loadFollowedUserIds(getCurrentUserId(), itemUserIds);
+
+        List<UserFollowListItemVO> records = relations.stream()
+                .map(relation -> followList ? relation.getUserId() : relation.getFollowUserId())
+                .map(itemUserId -> buildFollowListItem(itemUserId, userMap, userInfoMap, followedUserIds))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        return new PageResult<>(relationPage.getTotal(), records);
+    }
+
+    /**
+     * 构建单个关注列表项。
+     */
+    private UserFollowListItemVO buildFollowListItem(Long itemUserId,
+                                                     Map<Long, UserDO> userMap,
+                                                     Map<Long, UserInfoDO> userInfoMap,
+                                                     Set<Long> followedUserIds) {
+        UserDO user = userMap.get(itemUserId);
+        UserInfoDO userInfo = userInfoMap.get(itemUserId);
+        if (user == null && userInfo == null) {
+            return null;
+        }
+
+        return UserFollowListItemVO.builder()
+                .userId(itemUserId)
+                .username(resolveDisplayName(itemUserId, user, userInfo))
+                .photo(userInfo == null ? null : userInfo.getPhoto())
+                .position(userInfo == null ? null : userInfo.getPosition())
+                .company(userInfo == null ? null : userInfo.getCompany())
+                .profile(userInfo == null ? null : userInfo.getProfile())
+                .followed(followedUserIds.contains(itemUserId))
+                .build();
+    }
+
+    /**
+     * 批量加载用户基础信息。
+     */
+    private Map<Long, UserDO> loadUserMap(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return userMapper.selectBatchIds(userIds).stream()
+                .collect(Collectors.toMap(UserDO::getId, Function.identity(), (left, right) -> left));
+    }
+
+    /**
+     * 批量加载用户扩展信息。
+     */
+    private Map<Long, UserInfoDO> loadUserInfoMap(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return userInfoMapper.selectList(new LambdaQueryWrapper<UserInfoDO>()
+                        .in(UserInfoDO::getUserId, userIds))
+                .stream()
+                .collect(Collectors.toMap(UserInfoDO::getUserId, Function.identity(), (left, right) -> left));
+    }
+
+    /**
+     * 批量查询当前用户已关注的候选用户集合。
+     */
+    private Set<Long> loadFollowedUserIds(Long currentUserId, Collection<Long> candidateUserIds) {
+        if (currentUserId == null || candidateUserIds == null || candidateUserIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        return userRelationMapper.selectList(new LambdaQueryWrapper<UserRelationDO>()
+                        .eq(UserRelationDO::getFollowUserId, currentUserId)
+                        .eq(UserRelationDO::getFollowState, FOLLOW_STATE_FOLLOWED)
+                        .in(UserRelationDO::getUserId, candidateUserIds))
+                .stream()
+                .map(UserRelationDO::getUserId)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 统计用户主动关注人数。
+     */
+    private long countActiveFollows(Long followerUserId) {
+        Long count = userRelationMapper.selectCount(new LambdaQueryWrapper<UserRelationDO>()
+                .eq(UserRelationDO::getFollowUserId, followerUserId)
+                .eq(UserRelationDO::getFollowState, FOLLOW_STATE_FOLLOWED));
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * 统计用户粉丝人数。
+     */
+    private long countActiveFans(Long targetUserId) {
+        Long count = userRelationMapper.selectCount(new LambdaQueryWrapper<UserRelationDO>()
+                .eq(UserRelationDO::getUserId, targetUserId)
+                .eq(UserRelationDO::getFollowState, FOLLOW_STATE_FOLLOWED));
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * 判断当前用户是否已关注目标用户。
+     */
+    private boolean isFollowing(Long currentUserId, Long targetUserId) {
+        UserRelationDO relation = findRelation(targetUserId, currentUserId);
+        return relation != null && Objects.equals(relation.getFollowState(), FOLLOW_STATE_FOLLOWED);
+    }
+
+    /**
+     * 查询用户之间的关注关系记录。
+     */
+    private UserRelationDO findRelation(Long targetUserId, Long followerUserId) {
+        return userRelationMapper.selectOne(new LambdaQueryWrapper<UserRelationDO>()
+                .eq(UserRelationDO::getUserId, targetUserId)
+                .eq(UserRelationDO::getFollowUserId, followerUserId)
+                .last("limit 1"));
+    }
+
+    /**
+     * 发送关注通知消息。
+     */
+    private void sendFollowNotify(Long followerId, Long notifyUserId) {
+        if (Objects.equals(followerId, notifyUserId)) {
+            return;
+        }
+
+        String messageId = UUID.randomUUID().toString();
+        UserFollowNotifyMessage message = UserFollowNotifyMessage.builder()
+                .followerId(followerId)
+                .notifyUserId(notifyUserId)
+                .followerName(resolveDisplayName(followerId))
+                .build();
+        try {
+            rabbitTemplate.convertAndSend(
+                    NOTIFY_EXCHANGE,
+                    FOLLOW_NOTIFY_ROUTING_KEY,
+                    message,
+                    amqpMessage -> {
+                        amqpMessage.getMessageProperties().setCorrelationId(messageId);
+                        amqpMessage.getMessageProperties().setMessageId(messageId);
+                        return amqpMessage;
+                    },
+                    new CorrelationData(messageId));
+        } catch (Exception e) {
+            log.warn("follow notify send failed, followerId={}, notifyUserId={}", followerId, notifyUserId, e);
+        }
+    }
+
+    /**
+     * 查询用户展示名。
+     */
+    private String resolveDisplayName(Long userId) {
+        UserDO user = requireUser(userId);
+        UserInfoDO userInfo = userInfoMapper.selectOne(new LambdaQueryWrapper<UserInfoDO>()
+                .eq(UserInfoDO::getUserId, userId)
+                .last("limit 1"));
+        return resolveDisplayName(userId, user, userInfo);
+    }
+
+    /**
+     * 从基础信息和扩展信息中解析展示名。
+     */
+    private String resolveDisplayName(Long userId, UserDO user, UserInfoDO userInfo) {
+        if (userInfo != null && StringUtils.hasText(userInfo.getUsername())) {
+            return userInfo.getUsername();
+        }
+        if (user != null && StringUtils.hasText(user.getUsername())) {
+            return user.getUsername();
+        }
+        return "user-" + userId;
+    }
+
+    /**
+     * 校验用户存在。
+     */
+    private UserDO requireUser(Long userId) {
+        validateUserId(userId);
+        UserDO user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(StatusEnum.USER_NOT_FOUND);
+        }
+        return user;
+    }
+
+    /**
+     * 校验目标用户是否合法。
+     */
+    private void validateTargetUser(Long targetUserId, Long currentUserId, boolean failOnSelfFollow) {
+        validateUserId(targetUserId);
+        if (failOnSelfFollow && Objects.equals(targetUserId, currentUserId)) {
+            throw new BusinessException(StatusEnum.FOLLOW_SELF_NOT_ALLOWED);
+        }
+        if (!Objects.equals(targetUserId, currentUserId)) {
+            requireUser(targetUserId);
+        }
+    }
+
+    /**
+     * 校验用户 ID 参数。
+     */
+    private void validateUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
+    }
+
+    /**
+     * 校验分页参数。
+     */
+    private void validatePage(Integer page, Integer size) {
+        if (page == null || page < 1 || size == null || size < 1) {
+            throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
+    }
+
+    /**
+     * 获取当前登录用户 ID。
+     */
+    private Long getCurrentUserId() {
+        return ReqInfoContext.getReqInfo().getUserId();
+    }
 }

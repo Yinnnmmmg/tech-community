@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/**
+ * 站内消息接口。
+ */
 @RestController
 @RequestMapping("/Notify")
 public class NotifyMsgController {
@@ -16,11 +19,18 @@ public class NotifyMsgController {
     private NotifyMsgServiceImpl notifyMsgService;
 
     /**
-     * 获取我的系统消息
-     * */
+     * 获取当前用户的系统消息。
+     */
     @GetMapping("/MySystemNotify")
-    public Result<List<String>> getMySystemNotify(){
-        List<String> mySystemNotify = notifyMsgService.getMySystemNotify();
-        return Result.success(mySystemNotify);
+    public Result<List<String>> getMySystemNotify() {
+        return Result.success(notifyMsgService.getMySystemNotify());
+    }
+
+    /**
+     * 获取当前用户的关注通知消息。
+     */
+    @GetMapping("/MyFollowNotify")
+    public Result<List<String>> getMyFollowNotify() {
+        return Result.success(notifyMsgService.getMyFollowNotify());
     }
 }
