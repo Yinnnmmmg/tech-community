@@ -13,9 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
-/**
- * 基于 RAG 的社区私有知识库问答
- * */
 @RestController
 @RequestMapping("/ai")
 public class AiController {
@@ -23,6 +20,9 @@ public class AiController {
     @Autowired
     private ChatService chatService;
 
+    /**
+     * 基于 RAG 的社区私有知识库问答
+     * */
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
     public Flux<ServerSentEvent<ChatStreamVO>> chat(@RequestBody @Validated ChatReq req) {
 
