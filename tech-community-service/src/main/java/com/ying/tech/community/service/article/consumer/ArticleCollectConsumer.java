@@ -105,7 +105,8 @@ public class ArticleCollectConsumer {
                 .set("collection_stat", message.getCollectionStat())
                 .set("read_stat", defaultStat(message.getReadStat()))
                 .eq("user_id", message.getUserId())
-                .eq("document_id", message.getDocumentId());
+                .eq("document_id", message.getDocumentId())
+                .eq("document_type", DOCUMENT_TYPE_ARTICLE);
         int updateRow = userFootMapper.update(null, wrapper);
         if (updateRow > 0) {
             return;

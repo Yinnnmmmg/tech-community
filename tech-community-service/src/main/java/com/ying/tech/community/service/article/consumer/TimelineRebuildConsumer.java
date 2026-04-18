@@ -1,7 +1,7 @@
 package com.ying.tech.community.service.article.consumer;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.ying.tech.community.core.constants.ArticleStatusConstants;
+import com.ying.tech.community.core.constants.PublishStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.message.TimelineRebuildMessage;
@@ -40,7 +40,7 @@ public class TimelineRebuildConsumer {
             // Only approved articles are allowed to enter the public timeline.
             List<ArticleDO> articles = articleMapper.selectList(
                     new QueryWrapper<ArticleDO>()
-                            .eq("status", ArticleStatusConstants.APPROVED)
+                            .eq("status", PublishStatusConstants.APPROVED)
                             .orderByDesc("create_time")
                             .last("LIMIT 5000"));
 

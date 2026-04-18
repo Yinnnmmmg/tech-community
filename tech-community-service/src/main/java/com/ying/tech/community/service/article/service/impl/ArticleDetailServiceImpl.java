@@ -1,7 +1,7 @@
 package com.ying.tech.community.service.article.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.ying.tech.community.core.constants.ArticleStatusConstants;
+import com.ying.tech.community.core.constants.PublishStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
@@ -41,6 +41,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     private static final int LOCK_SEGMENT_COUNT = 256;
     /** 文章时间展示格式。 */
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int DOCUMENT_TYPE_ARTICLE = 1;
 
     private final ArticleMapper articleMapper;
     private final ArticleDetailMapper articleDetailMapper;
@@ -125,7 +126,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
      */
     private ArticleDO getApprovedArticle(Long articleId) {
         ArticleDO article = articleMapper.selectById(articleId);
-        if (article == null || !java.util.Objects.equals(article.getStatus(), ArticleStatusConstants.APPROVED)) {
+        if (article == null || !java.util.Objects.equals(article.getStatus(), PublishStatusConstants.APPROVED)) {
             log.warn("article not approved, articleId={}", articleId);
             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
         }
@@ -145,6 +146,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         vo.setCoverUrl(article.getPicture());
         vo.setLikeCount(article.getLikeCount() == null ? 0L : article.getLikeCount().longValue());
         vo.setCollectionCount(article.getCollectionCount() == null ? 0L : article.getCollectionCount().longValue());
+        vo.setCommentCount(article.getCommentCount() == null ? 0L : article.getCommentCount().longValue());
         Long currentUserId = ReqInfoContext.getReqInfo() == null ? null : ReqInfoContext.getReqInfo().getUserId();
         vo.setLikeStat(resolveLikeStat(article.getId(), currentUserId));
         vo.setCollectionStat(resolveCollectionStat(article.getId(), currentUserId));
@@ -247,6 +249,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         UserFootDO userFootDO = userFootMapper.selectOne(new QueryWrapper<UserFootDO>()
                 .eq("user_id", userId)
                 .eq("document_id", articleId)
+                .eq("document_type", DOCUMENT_TYPE_ARTICLE)
                 .last("limit 1"));
         if (userFootDO == null) {
             return 0L;

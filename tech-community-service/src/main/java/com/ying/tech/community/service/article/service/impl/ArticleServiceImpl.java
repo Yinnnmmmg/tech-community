@@ -4,7 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.ying.tech.community.core.common.CursorPageResult;
-import com.ying.tech.community.core.constants.ArticleStatusConstants;
+import com.ying.tech.community.core.constants.PublishStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
@@ -72,6 +72,7 @@ import java.util.stream.Collectors;
 public class ArticleServiceImpl implements ArticleService {
     /** 统一的时间格式化器。 */
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int DOCUMENT_TYPE_ARTICLE = 1;
 
     private final ArticleMapper articleMapper;
     private final ArticleDetailMapper articleDetailMapper;
@@ -120,7 +121,7 @@ public class ArticleServiceImpl implements ArticleService {
         ArticleDO article = new ArticleDO();
         BeanUtil.copyProperties(articlePostReq, article);
         article.setUserId(userId);
-        article.setStatus(ArticleStatusConstants.PENDING);
+        article.setStatus(PublishStatusConstants.PENDING);
         articleMapper.insert(article);
 
         ArticleDetailDO articleDetail = new ArticleDetailDO();
@@ -167,7 +168,7 @@ public class ArticleServiceImpl implements ArticleService {
                 .set("category_id", articleUpdateReq.getCategoryId())
                 .set("summary", null)
                 .set("picture", resolveCoverUrl(boundAttachments))
-                .set("status", ArticleStatusConstants.PENDING));
+                .set("status", PublishStatusConstants.PENDING));
 
         ArticleDetailDO detail = articleDetailMapper.selectOne(new QueryWrapper<ArticleDetailDO>()
                 .eq("article_id", articleId)
@@ -268,7 +269,7 @@ public class ArticleServiceImpl implements ArticleService {
         if (!missingIds.isEmpty()) {
             List<ArticleDO> dbArticles = articleMapper.selectList(new QueryWrapper<ArticleDO>()
                     .in("id", missingIds)
-                    .eq("status", ArticleStatusConstants.APPROVED));
+                    .eq("status", PublishStatusConstants.APPROVED));
 
             Map<String, Object> redisBatchData = new HashMap<>();
             for (ArticleDO article : dbArticles) {
@@ -293,7 +294,7 @@ public class ArticleServiceImpl implements ArticleService {
             ArticleDO articleDO = cachedArticles.get(i) != null
                     ? (ArticleDO) cachedArticles.get(i)
                     : missingArticlesMap.get(articleId);
-            if (articleDO != null && Objects.equals(articleDO.getStatus(), ArticleStatusConstants.APPROVED)) {
+            if (articleDO != null && Objects.equals(articleDO.getStatus(), PublishStatusConstants.APPROVED)) {
                 finalArticles.add(articleDO);
             }
         }
@@ -310,7 +311,7 @@ public class ArticleServiceImpl implements ArticleService {
      */
     private CursorPageResult<ArticleListVO> queryArticleListFromDB(Long cursor, Integer pageSize) {
         QueryWrapper<ArticleDO> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("status", ArticleStatusConstants.APPROVED)
+        queryWrapper.eq("status", PublishStatusConstants.APPROVED)
                 .orderByDesc("create_time")
                 .last("LIMIT " + pageSize);
 
@@ -347,6 +348,7 @@ public class ArticleServiceImpl implements ArticleService {
             List<UserFootDO> userFootDOList = userFootMapper.selectList(
                     new QueryWrapper<UserFootDO>()
                             .eq("document_id", articleId)
+                            .eq("document_type", DOCUMENT_TYPE_ARTICLE)
                             .eq("like_stat", 1)
             );
             List<Long> likedUserIds = userFootDOList.stream()
@@ -405,6 +407,7 @@ public class ArticleServiceImpl implements ArticleService {
             List<UserFootDO> userFootDOList = userFootMapper.selectList(
                     new QueryWrapper<UserFootDO>()
                             .eq("document_id", articleId)
+                            .eq("document_type", DOCUMENT_TYPE_ARTICLE)
                             .eq("collection_stat", 1)
             );
             List<Long> collectedUserIds = userFootDOList.stream()
@@ -492,6 +495,9 @@ public class ArticleServiceImpl implements ArticleService {
             vo.setAuthorName(authorNameMap.get(article.getUserId()));
             vo.setCreateTime(formatTime(article.getCreateTime()));
             vo.setCoverUrl(article.getPicture());
+            vo.setLikeCount(article.getLikeCount() == null ? 0L : article.getLikeCount().longValue());
+            vo.setCollectionCount(article.getCollectionCount() == null ? 0L : article.getCollectionCount().longValue());
+            vo.setCommentCount(article.getCommentCount() == null ? 0L : article.getCommentCount().longValue());
             vo.setAttachmentCount(attachmentCount);
             vo.setHasAttachment(attachmentCount > 0);
             result.add(vo);
@@ -622,7 +628,7 @@ public class ArticleServiceImpl implements ArticleService {
      */
     private ArticleDO requireApprovedArticle(Long articleId) {
         ArticleDO article = articleMapper.selectById(articleId);
-        if (article == null || !Objects.equals(article.getStatus(), ArticleStatusConstants.APPROVED)) {
+        if (article == null || !Objects.equals(article.getStatus(), PublishStatusConstants.APPROVED)) {
             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
         }
         return article;

@@ -11,7 +11,6 @@ import java.io.Serializable;
 @TableName("notify_msg")
 @Builder
 public class NotifyMsgDO extends BaseDO implements Serializable {
-    private static final long serialVersionUID = 1L;
 
     private Long relatedId;
 

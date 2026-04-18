@@ -47,6 +47,10 @@ public class RabbitMQConfig {
 
     public static final String NOTIFY_DIRECT_EXCHANGE     = "notify.direct";
 
+    public static final String COMMENT_FANOUT_EXCHANGE = "comment.publish.fanout";
+    public static final String COMMENT_DIRECT_EXCHANGE = "comment.publish.direct";
+    public static final String COMMENT_DLX_EXCHANGE = "comment.dlx";
+
 
     // ===================== 主队列 =====================
     public static final String ARTICLE_PUBLISH_REVIEW_QUEUE  = "article.publish.review.queue";
@@ -66,6 +70,11 @@ public class RabbitMQConfig {
     // AI 向量同步主队列。
     public static final String AI_EMBEDDING_QUEUE = "ai.embedding.queue";
 
+    public static final String COMMENT_PUBLISH_QUEUE = "comment.publish.review.queue";
+    public static final String COMMENT_PUBLISH_FAIL_QUEUE = "comment.publish.review.fail.queue";
+    public static final String COMMENT_PUBLISH_SUCCESS_QUEUE = "comment.publish.review.success.queue";
+
+
     // ===================== 死信队列 =====================
     public static final String ARTICLE_PUBLISH_REVIEW_DLQ  = "article.publish.review.dlq";
     public static final String ARTICLE_PUBLISH_TIMELINE_DLQ = "article.publish.timeline.dlq";
@@ -81,11 +90,13 @@ public class RabbitMQConfig {
     // AI 向量同步死信队列。
     public static final String AI_EMBEDDING_DLQ = "ai.embedding.dlq";
 
+    public static final String COMMENT_PUBLISH_DLQ = "comment.publish.dlq";
+
     // ===================== 路由键 =====================
     private static final String ARTICLE_PUBLISH_REVIEW_KEY = "article.publish.review";
     private static final String TIMELINE_REBUILD_KEY = "timeline.rebuild";
     private static final String ARTICLE_LIKE_KEY  = "article.like";
-    // 收藏及通知相关路由键。
+
     private static final String ARTICLE_COLLECT_KEY = "article.collect";
     private static final String ARTICLE_LIKE_NOTIFY_KEY = "article.like.notify";
     private static final String ARTICLE_COLLECT_NOTIFY_KEY = "article.collect.notify";
@@ -106,6 +117,11 @@ public class RabbitMQConfig {
     // AI 向量同步路由键。
     private static final String AI_EMBEDDING_KEY = "ai.embedding";
     private static final String AI_EMBEDDING_DEAD_KEY = "ai.embedding.dead";
+
+    private static final String COMMENT_PUBLISH_DEAD_KEY = "comment.publish.dead";
+    private static final String COMMENT_PUBLISH_FAIL_KEY = "comment.publish.fail";
+    private static final String COMMENT_PUBLISH_SUCCESS_KEY = "comment.publish.success";
+
 
 
     // -----------------------------------------------------------------------
@@ -170,6 +186,20 @@ public class RabbitMQConfig {
         return ExchangeBuilder.directExchange(NOTIFY_DIRECT_EXCHANGE).durable(true).build();
     }
 
+    @Bean
+    public FanoutExchange commentFanoutExchange() {
+        return ExchangeBuilder.fanoutExchange(COMMENT_FANOUT_EXCHANGE).durable(true).build();
+    }
+
+    @Bean
+    public DirectExchange commentDirectExchange() {
+        return ExchangeBuilder.directExchange(COMMENT_DIRECT_EXCHANGE).durable(true).build();
+    }
+
+    @Bean
+    public DirectExchange commentDlxExchange() {
+        return ExchangeBuilder.directExchange(COMMENT_DLX_EXCHANGE).durable(true).build();
+    }
     // -----------------------------------------------------------------------
     // 主队列声明（durable=true + x-dead-letter-exchange 参数）
     // 消费者调用 basicNack(requeue=false) 后，消息自动路由至 DLX
@@ -266,6 +296,26 @@ public class RabbitMQConfig {
                 .withArgument("x-dead-letter-routing-key", AI_EMBEDDING_DEAD_KEY)
                 .build();
     }
+
+    @Bean
+    public Queue commentPublishQueue() {
+        return QueueBuilder.durable(COMMENT_PUBLISH_QUEUE)
+                .withArgument("x-dead-letter-exchange", COMMENT_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", COMMENT_PUBLISH_DEAD_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue commentPublishSuccessQueue(){
+        return QueueBuilder.durable(COMMENT_PUBLISH_SUCCESS_QUEUE)
+                .build();
+    }
+
+    @Bean
+    public Queue commentPublishFailQueue(){
+        return QueueBuilder.durable(COMMENT_PUBLISH_FAIL_QUEUE)
+                .build();
+    }
     // -----------------------------------------------------------------------
     // 死信队列声明（durable=true）
     // -----------------------------------------------------------------------
@@ -321,6 +371,11 @@ public class RabbitMQConfig {
     @Bean
     public Queue aiEmbeddingDlq(){
         return QueueBuilder.durable(AI_EMBEDDING_DLQ).build();
+    }
+
+    @Bean
+    public Queue commentPublishDlq() {
+        return QueueBuilder.durable(COMMENT_PUBLISH_DLQ).build();
     }
     // -----------------------------------------------------------------------
     // 绑定：主队列 → 交换机
@@ -412,6 +467,27 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(aiEmbeddingQueue).to(articleFanoutExchange);
     }
 
+    @Bean
+    public Binding commentPublishBinding(Queue commentPublishQueue,
+                                         FanoutExchange commentFanoutExchange) {
+        return BindingBuilder.bind(commentPublishQueue).to(commentFanoutExchange);
+    }
+
+    @Bean
+    public Binding commentPublishSuccessBinding(Queue commentPublishSuccessQueue,
+                                                DirectExchange commentDirectExchange) {
+        return BindingBuilder.bind(commentPublishSuccessQueue)
+                .to(commentDirectExchange)
+                .with(COMMENT_PUBLISH_SUCCESS_KEY);
+    }
+
+    @Bean
+    public Binding commentPublishFailBinding(Queue commentPublishFailQueue,
+                                            DirectExchange commentDirectExchange) {
+        return BindingBuilder.bind(commentPublishFailQueue)
+                .to(commentDirectExchange)
+                .with(COMMENT_PUBLISH_FAIL_KEY);
+    }
     // -----------------------------------------------------------------------
     // 绑定：死信队列 → DLX
     // -----------------------------------------------------------------------
@@ -500,6 +576,14 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(aiEmbeddingDlq)
                 .to(articleDlxExchange)
                 .with(AI_EMBEDDING_DEAD_KEY);
+    }
+
+    @Bean
+    public Binding commentPublishDlqBinding(Queue commentPublishDlq,
+                                           DirectExchange commentDlxExchange) {
+        return BindingBuilder.bind(commentPublishDlq)
+                .to(commentDlxExchange)
+                .with(COMMENT_PUBLISH_DEAD_KEY);
     }
 
     // -----------------------------------------------------------------------

@@ -3,8 +3,8 @@ package com.ying.tech.community.service.ai.consumer;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.rabbitmq.client.Channel;
-import com.ying.tech.community.core.constants.ArticleStatusConstants;
-import com.ying.tech.community.service.ai.entity.ArticleAiResult;
+import com.ying.tech.community.core.constants.PublishStatusConstants;
+import com.ying.tech.community.service.ai.entity.PublishAiResult;
 import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.entity.ArticleDetailDO;
 import com.ying.tech.community.service.article.message.ArticlePublishMessage;
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-import static com.ying.tech.community.core.constants.AiConstants.SYSTEM_PROMPT;
+import static com.ying.tech.community.core.constants.AiConstants.ARTICLE_REVIEW_SYSTEM_PROMPT;
 
 /**
  * AI审核与摘要生成消费者
@@ -119,11 +119,11 @@ public class ReviewAndSummaryConsumer {
 
             // 2. 调用AI大模型进行安全审核和摘要生成
             //    使用系统提示词约束模型行为，将文章正文作为用户输入
-            ArticleAiResult result = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
+            PublishAiResult result = chatClient.prompt()
+                    .system(ARTICLE_REVIEW_SYSTEM_PROMPT)
                     .user(u -> u.text("文章标题和正文如下：\n{content},{title}").param("content", content).param("title",title))
                     .call()
-                    .entity(ArticleAiResult.class);
+                    .entity(PublishAiResult.class);
 
             // 3. 检查AI模型返回结果：确保模型返回了有效结果
             if (result == null) {
@@ -137,7 +137,7 @@ public class ReviewAndSummaryConsumer {
             if (!result.isSafe()) {
                 UpdateWrapper<ArticleDO> updateWrapper = new UpdateWrapper<ArticleDO>()
                         .eq("id", message.getArticleId())
-                        .set("status", ArticleStatusConstants.REJECTED);
+                        .set("status", PublishStatusConstants.REJECTED);
                 articleMapper.update(updateWrapper);
                 rabbitTemplate.convertAndSend("notify.direct", "notify.publish.fail", message);
                 channel.basicAck(deliveryTag, false);
@@ -151,7 +151,7 @@ public class ReviewAndSummaryConsumer {
             UpdateWrapper<ArticleDO> updateWrapper = new UpdateWrapper<ArticleDO>()
                     .eq("id", message.getArticleId())
                     .set("summary", result.summary())
-                    .set("status", ArticleStatusConstants.APPROVED);
+                    .set("status", PublishStatusConstants.APPROVED);
             articleMapper.update(updateWrapper);
             log.info("[ReviewAndSummary] handle success, articleId={}", message.getArticleId());
 

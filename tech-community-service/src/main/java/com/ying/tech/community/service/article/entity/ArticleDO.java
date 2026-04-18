@@ -50,6 +50,8 @@ public class ArticleDO extends BaseDO implements Serializable {
 
     private Integer likeCount;
 
+    private Integer commentCount;
+
     /** 文章收藏数。 */
     private Integer collectionCount;
 
