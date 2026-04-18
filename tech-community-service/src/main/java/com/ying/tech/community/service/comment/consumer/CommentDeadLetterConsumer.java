@@ -30,4 +30,28 @@ public class CommentDeadLetterConsumer {
         log.error("[DLQ][CommentPublishReview] message={}", message);
         channel.basicAck(deliveryTag, false);
     }
+
+    /**
+     * 处理评论点赞落库死信消息。
+     */
+    @RabbitListener(queues = "comment.like.dlq")
+    public void handleCommentLikeDead(Message message,
+                                      Channel channel,
+                                      @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+            throws IOException {
+        log.error("[DLQ][CommentLike] message={}", message);
+        channel.basicAck(deliveryTag, false);
+    }
+
+    /**
+     * 处理评论点赞通知死信消息。
+     */
+    @RabbitListener(queues = "comment.like.notify.dlq")
+    public void handleCommentLikeNotifyDead(Message message,
+                                            Channel channel,
+                                            @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
+            throws IOException {
+        log.error("[DLQ][CommentLikeNotify] message={}", message);
+        channel.basicAck(deliveryTag, false);
+    }
 }

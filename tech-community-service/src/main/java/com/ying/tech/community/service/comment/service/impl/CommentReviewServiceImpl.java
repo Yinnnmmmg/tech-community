@@ -7,6 +7,7 @@ import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.comment.entiry.CommentDO;
 import com.ying.tech.community.service.comment.repository.mapper.CommentMapper;
+import com.ying.tech.community.service.comment.service.CommentCacheService;
 import com.ying.tech.community.service.comment.service.CommentReviewService;
 import com.ying.tech.community.service.user.entity.UserFootDO;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
@@ -14,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static com.ying.tech.community.core.constants.PublishStatusConstants.APPROVED;
 import static com.ying.tech.community.core.constants.PublishStatusConstants.REJECTED;
@@ -28,6 +31,8 @@ public class CommentReviewServiceImpl implements CommentReviewService {
     private ArticleMapper articleMapper;
     @Autowired
     private UserFootMapper userFootMapper;
+    @Autowired
+    private CommentCacheService commentCacheService;
 
     /**
      * 驳回评论：状态和驳回原因一起事务提交
@@ -76,6 +81,15 @@ public class CommentReviewServiceImpl implements CommentReviewService {
 
         //文章维度的 user_foot.comment_stat 标记为 1
         syncCommentFoot(authorId, articleDO);
+
+        //事务提交后再失效评论分页缓存和文章摘要缓存
+        registerAfterCommit(() -> {
+            commentCacheService.bumpArticleListVersion(articleDO.getId());
+            if (commentDO.getParentCommentId() != null) {
+                commentCacheService.bumpReplyListVersion(commentDO.getParentCommentId());
+            }
+            commentCacheService.clearArticleSummaryCache(articleDO.getId());
+        });
     }
 
     /**
@@ -111,5 +125,17 @@ public class CommentReviewServiceImpl implements CommentReviewService {
                 throw duplicateKeyException;
             }
         }
+    }
+
+    /**
+     * 注册事务提交后的缓存清理动作。
+     */
+    private void registerAfterCommit(Runnable runnable) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                runnable.run();
+            }
+        });
     }
 }
