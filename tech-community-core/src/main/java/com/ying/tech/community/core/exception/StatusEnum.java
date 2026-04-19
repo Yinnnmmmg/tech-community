@@ -4,8 +4,6 @@ import lombok.Getter;
 
 /**
  * 业务状态码枚举。
- *
- * <p>200 表示成功，4xx 表示参数或业务拦截错误，5xx 表示系统内部错误。
  */
 @Getter
 public enum StatusEnum {
@@ -25,9 +23,10 @@ public enum StatusEnum {
     FOLLOW_SELF_NOT_ALLOWED(4012, "不能关注自己"),
     ARTICLE_NOT_FOUND(4013, "文章不存在"),
     ARTICLE_ACCESS_DENIED(4014, "无权操作该文章"),
+    AUTH_REQUIRED(4015, "请先登录"),
+    AUTH_FORBIDDEN(4016, "无权限访问"),
     FILE_UPLOAD_FAILED(5001, "文件上传失败");
 
-    // 业务错误码统一使用自定义编码，避免与 HTTP 状态码语义混淆。
     private final int code;
     private final String msg;
 

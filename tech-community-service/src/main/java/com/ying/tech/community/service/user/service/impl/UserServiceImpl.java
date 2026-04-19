@@ -2,11 +2,11 @@ package com.ying.tech.community.service.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import cn.dev33.satoken.stp.StpUtil;
 import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
 import com.ying.tech.community.core.global.ReqInfoContext;
-import com.ying.tech.community.core.utils.JWTUtils;
 import com.ying.tech.community.service.notifyMsg.message.UserFollowNotifyMessage;
 import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.entity.UserInfoDO;
@@ -83,7 +83,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public Long register(UserSaveReq req) {
         if (!StringUtils.hasText(req.getUsername()) || !StringUtils.hasText(req.getPassword())) {
-            throw new RuntimeException("\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new RuntimeException("用户名或密码不能为空");
         }
 
         UserDO existUser = userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
@@ -110,7 +110,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public String login(String username, String password) {
         if (!StringUtils.hasText(username) || !StringUtils.hasText(password)) {
-            throw new RuntimeException("\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new RuntimeException("用户名或密码不能为空");
         }
 
         UserDO user = getByUsername(username);
@@ -123,7 +123,8 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(StatusEnum.USER_PWD_ERROR);
         }
 
-        return JWTUtils.createToken(user.getId());
+        StpUtil.login(user.getId());
+        return StpUtil.getTokenValue();
     }
 
     /**

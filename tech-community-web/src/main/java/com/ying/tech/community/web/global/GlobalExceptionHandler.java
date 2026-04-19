@@ -1,5 +1,9 @@
 package com.ying.tech.community.web.global;
 
+import cn.dev33.satoken.exception.NotLoginException;
+import cn.dev33.satoken.exception.NotPermissionException;
+import cn.dev33.satoken.exception.NotRoleException;
+import cn.dev33.satoken.exception.SaTokenException;
 import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
@@ -11,34 +15,22 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
-/**
- * 全局异常处理器。
- */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * 捕获业务异常并返回业务错误码。
-     */
     @ExceptionHandler(BusinessException.class)
     public Result<Void> handleBusinessException(BusinessException e) {
         log.warn("business exception: code={}, msg={}", e.getCode(), e.getMsg());
         return Result.fail(e.getCode(), e.getMsg());
     }
 
-    /**
-     * 捕获上传文件过大的异常。
-     */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public Result<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
         log.warn("upload size exceeded", e);
         return Result.fail(StatusEnum.FILE_TOO_LARGE);
     }
 
-    /**
-     * 捕获基于 {@code @Validated} 的参数校验异常。
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Result<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException e) {
         String errorMsg = e.getBindingResult()
@@ -50,9 +42,24 @@ public class GlobalExceptionHandler {
         return Result.fail(StatusEnum.PARAM_NOTNULL.getCode(), errorMsg);
     }
 
-    /**
-     * 捕获未被显式处理的系统异常。
-     */
+    @ExceptionHandler(NotLoginException.class)
+    public Result<Void> handleNotLoginException(NotLoginException e) {
+        log.warn("not login: {}", e.getMessage());
+        return Result.fail(StatusEnum.AUTH_REQUIRED);
+    }
+
+    @ExceptionHandler({NotPermissionException.class, NotRoleException.class})
+    public Result<Void> handlePermissionException(SaTokenException e) {
+        log.warn("permission denied: {}", e.getMessage());
+        return Result.fail(StatusEnum.AUTH_FORBIDDEN);
+    }
+
+    @ExceptionHandler(SaTokenException.class)
+    public Result<Void> handleSaTokenException(SaTokenException e) {
+        log.warn("sa-token exception: {}", e.getMessage());
+        return Result.fail(StatusEnum.AUTH_REQUIRED.getCode(), e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public Result<Void> handleSystemException(Exception e) {
         log.error("system exception", e);

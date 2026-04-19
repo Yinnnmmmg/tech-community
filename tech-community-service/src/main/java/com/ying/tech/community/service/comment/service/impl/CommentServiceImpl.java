@@ -128,7 +128,7 @@ public class CommentServiceImpl implements CommentService {
         //先校验文章和分页参数
         validateArticle(articleId);
         validatePage(page, size);
-        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        Long currentUserId = getCurrentUserId();
         Long articleAuthorId = articleMapper.selectById(articleId).getUserId();
 
         //公开分页走 Redis 分页缓存，mine 继续直接查数据库
@@ -138,7 +138,9 @@ public class CommentServiceImpl implements CommentService {
 
         CommentArticlePageVO pageVO = new CommentArticlePageVO();
         pageVO.setPublicPage(publicPage);
-        pageVO.setMine(queryArticleMineComments(articleId, currentUserId, articleAuthorId));
+        pageVO.setMine(currentUserId == null
+                ? Collections.emptyList()
+                : queryArticleMineComments(articleId, currentUserId, articleAuthorId));
         return pageVO;
     }
 
@@ -154,7 +156,7 @@ public class CommentServiceImpl implements CommentService {
             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
         }
 
-        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+        Long currentUserId = getCurrentUserId();
         Long articleAuthorId = articleMapper.selectById(topComment.getArticleId()).getUserId();
 
         PageResult<CommentListItemVO> publicPage = commentCacheService.getReplyPublicPage(commentId, page, size,
@@ -163,7 +165,9 @@ public class CommentServiceImpl implements CommentService {
 
         CommentReplyPageVO pageVO = new CommentReplyPageVO();
         pageVO.setPublicPage(publicPage);
-        pageVO.setMine(queryReplyMineComments(topComment.getArticleId(), commentId, currentUserId, articleAuthorId));
+        pageVO.setMine(currentUserId == null
+                ? Collections.emptyList()
+                : queryReplyMineComments(topComment.getArticleId(), commentId, currentUserId, articleAuthorId));
         return pageVO;
     }
 
@@ -199,6 +203,7 @@ public class CommentServiceImpl implements CommentService {
         }
         redisTemplate.expire(likeKey, 30, TimeUnit.DAYS);
 
+        //异步落库
         RedisLikeToDBMessage message = RedisLikeToDBMessage.builder()
                 .userId(currentUserId)
                 .documentId(commentId)
@@ -474,9 +479,11 @@ public class CommentServiceImpl implements CommentService {
         Set<Long> likedCommentIds = queryLikedCommentIds(commentIds, currentUserId);
         for (CommentListItemVO record : records) {
             String likeKey = RedisConstants.TECH_COMMUNITY_COMMENT_LIKE + record.getCommentId();
-            Long likeStat = Boolean.TRUE.equals(redisTemplate.hasKey(likeKey))
+            Long likeStat = currentUserId == null
+                    ? 0L
+                    : (Boolean.TRUE.equals(redisTemplate.hasKey(likeKey))
                     ? (Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(likeKey, currentUserId)) ? 1L : 0L)
-                    : (likedCommentIds.contains(record.getCommentId()) ? 1L : 0L);
+                    : (likedCommentIds.contains(record.getCommentId()) ? 1L : 0L));
             record.setLikeStat(likeStat);
             record.setLikeCount(resolveLikeCount(record.getCommentId(), record.getLikeCount()));
             boolean canDelete = Objects.equals(currentUserId, record.getUserId())
@@ -488,6 +495,11 @@ public class CommentServiceImpl implements CommentService {
     /**
      * 查询当前用户在指定评论集合上的点赞状态。
      */
+    private Long getCurrentUserId() {
+        ReqInfoContext.ReqInfo reqInfo = ReqInfoContext.getReqInfo();
+        return reqInfo == null ? null : reqInfo.getUserId();
+    }
+
     private Set<Long> queryLikedCommentIds(List<Long> commentIds, Long currentUserId) {
         if (commentIds == null || commentIds.isEmpty() || currentUserId == null) {
             return Collections.emptySet();

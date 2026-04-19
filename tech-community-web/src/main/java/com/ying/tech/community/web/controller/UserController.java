@@ -1,5 +1,7 @@
 package com.ying.tech.community.web.controller;
 
+import cn.dev33.satoken.annotation.SaCheckLogin;
+import cn.dev33.satoken.stp.StpUtil;
 import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.core.global.ReqInfoContext;
@@ -41,6 +43,15 @@ public class UserController {
     public Result<String> login(@RequestParam String username, @RequestParam String password) {
         String token = userService.login(username, password);
         return Result.success(token);
+    }
+
+    /**
+     * 退出登录
+     * */
+    @PostMapping("/logout")
+    public Result<Void> logout() {
+        StpUtil.logout();
+        return Result.success();
     }
 
     /**
