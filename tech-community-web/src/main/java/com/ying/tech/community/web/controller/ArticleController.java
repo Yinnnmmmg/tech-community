@@ -87,9 +87,10 @@ public class ArticleController {
     }
 
     @GetMapping("/list")
-    public Result<CursorPageResult<ArticleListVO>> articleList(@RequestParam(defaultValue = "1") Long cursor,
-                                                               @RequestParam(defaultValue = "10") Integer pageSize) {
-        CursorPageResult<ArticleListVO> articlesPageResult = articleService.getArticleList(cursor, pageSize);
+    public Result<CursorPageResult<ArticleListVO>> articleList(@RequestParam(defaultValue = "0") Long cursor,
+                                                               @RequestParam(defaultValue = "10") Integer pageSize,
+                                                               @RequestParam(required = false) Long categoryId) {
+        CursorPageResult<ArticleListVO> articlesPageResult = articleService.getArticleList(cursor, pageSize, categoryId);
         return Result.success(articlesPageResult);
     }
 

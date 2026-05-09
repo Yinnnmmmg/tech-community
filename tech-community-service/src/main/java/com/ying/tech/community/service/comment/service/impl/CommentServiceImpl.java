@@ -266,6 +266,28 @@ public class CommentServiceImpl implements CommentService {
     /**
      * 校验文章是否存在且允许评论
      */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void deleteCommentByAdmin(Long commentId) {
+        CommentDO commentDO = commentMapper.selectById(commentId);
+        if (commentDO == null) {
+            throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
+
+        ArticleDO articleDO = articleMapper.selectById(commentDO.getArticleId());
+        if (articleDO == null) {
+            throw new BusinessException(StatusEnum.ARTICLE_NOT_FOUND);
+        }
+
+        List<Long> deletedCommentIds = new ArrayList<>();
+        deletedCommentIds.add(commentDO.getId());
+        if (commentDO.getParentCommentId() == null) {
+            deleteTopComment(commentDO, articleDO, deletedCommentIds);
+        } else {
+            deleteReplyComment(commentDO, articleDO, deletedCommentIds);
+        }
+    }
+
     private void validateArticle(Long articleId) {
         ArticleDO articleDO = articleMapper.selectById(articleId);
         if (articleDO == null) {

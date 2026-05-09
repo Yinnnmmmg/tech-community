@@ -25,6 +25,7 @@ public enum StatusEnum {
     ARTICLE_ACCESS_DENIED(4014, "无权操作该文章"),
     AUTH_REQUIRED(4015, "请先登录"),
     AUTH_FORBIDDEN(4016, "无权限访问"),
+    LAST_ADMIN_REQUIRED(4017, "至少需要保留一个管理员"),
     FILE_UPLOAD_FAILED(5001, "文件上传失败");
 
     private final int code;

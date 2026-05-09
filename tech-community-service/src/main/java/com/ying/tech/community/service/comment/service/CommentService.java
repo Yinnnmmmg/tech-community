@@ -15,4 +15,6 @@ public interface CommentService {
     CommentLikeVO likeComment(Long commentId);
 
     void deleteComment(Long commentId);
+
+    void deleteCommentByAdmin(Long commentId);
 }

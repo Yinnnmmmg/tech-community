@@ -7,8 +7,11 @@ import java.io.Serializable;
 @Data
 public class ArticleListVO implements Serializable {
     private Long articleId;
+    private Long authorId;
     private String title;
     private String summary;
+    private Long categoryId;
+    private String categoryName;
     private String authorName;
     private String createTime;
     private String coverUrl;

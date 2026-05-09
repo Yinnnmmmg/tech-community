@@ -4,21 +4,31 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import cn.dev33.satoken.stp.StpUtil;
 import com.ying.tech.community.core.common.PageResult;
+import com.ying.tech.community.core.constants.PublishStatusConstants;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
 import com.ying.tech.community.core.global.ReqInfoContext;
+import com.ying.tech.community.service.article.entity.ArticleDO;
+import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
+import com.ying.tech.community.service.article.service.ArticleService;
+import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.notifyMsg.message.UserFollowNotifyMessage;
 import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.entity.UserInfoDO;
+import com.ying.tech.community.service.user.entity.UserFootDO;
 import com.ying.tech.community.service.user.entity.UserRelationDO;
+import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserRelationMapper;
+import com.ying.tech.community.service.user.req.UserProfileUpdateReq;
 import com.ying.tech.community.service.user.req.UserSaveReq;
 import com.ying.tech.community.service.user.service.UserService;
 import com.ying.tech.community.service.user.vo.FollowActionVO;
 import com.ying.tech.community.service.user.vo.FollowStatsVO;
+import com.ying.tech.community.service.user.vo.UserCurrentVO;
 import com.ying.tech.community.service.user.vo.UserFollowListItemVO;
+import com.ying.tech.community.service.user.vo.UserProfileVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -29,6 +39,8 @@ import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -47,6 +59,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class UserServiceImpl implements UserService {
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int DOCUMENT_TYPE_ARTICLE = 1;
 
     /** 已关注状态。 */
     private static final int FOLLOW_STATE_FOLLOWED = 1;
@@ -63,6 +77,12 @@ public class UserServiceImpl implements UserService {
     private UserInfoMapper userInfoMapper;
     @Autowired
     private UserRelationMapper userRelationMapper;
+    @Autowired
+    private ArticleMapper articleMapper;
+    @Autowired
+    private ArticleService articleService;
+    @Autowired
+    private UserFootMapper userFootMapper;
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
@@ -99,6 +119,7 @@ public class UserServiceImpl implements UserService {
         user.setPassword(encodedPwd);
         user.setThirdAccountId(null);
         user.setLoginType(0);
+        user.setUserRole(0);
         user.setDeleted(0);
         userMapper.insert(user);
         return user.getId();
@@ -133,6 +154,96 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserDO getUserInfo(Long userId) {
         return requireUser(userId);
+    }
+
+    @Override
+    public UserCurrentVO getCurrentUser(Long userId) {
+        UserDO user = requireUser(userId);
+        UserInfoDO userInfo = userInfoMapper.selectOne(new LambdaQueryWrapper<UserInfoDO>()
+                .eq(UserInfoDO::getUserId, userId)
+                .last("limit 1"));
+
+        UserCurrentVO currentUser = new UserCurrentVO();
+        currentUser.setId(user.getId());
+        currentUser.setUsername(resolveDisplayName(userId, user, userInfo));
+        currentUser.setUserRole(normalizeRole(user.getUserRole()));
+        if (userInfo != null) {
+            currentUser.setPhoto(userInfo.getPhoto());
+            currentUser.setPosition(userInfo.getPosition());
+            currentUser.setCompany(userInfo.getCompany());
+            currentUser.setProfile(userInfo.getProfile());
+        }
+        return currentUser;
+    }
+
+    @Override
+    public UserProfileVO getUserProfile(Long userId) {
+        UserDO user = requireUser(userId);
+        UserInfoDO userInfo = userInfoMapper.selectOne(new LambdaQueryWrapper<UserInfoDO>()
+                .eq(UserInfoDO::getUserId, userId)
+                .last("limit 1"));
+
+        Long currentUserId = getCurrentUserId();
+        UserProfileVO profile = new UserProfileVO();
+        profile.setUserId(userId);
+        profile.setUsername(resolveDisplayName(userId, user, userInfo));
+        profile.setUserRole(normalizeRole(user.getUserRole()));
+        profile.setPhoto(userInfo == null ? null : userInfo.getPhoto());
+        profile.setPosition(userInfo == null ? null : userInfo.getPosition());
+        profile.setCompany(userInfo == null ? null : userInfo.getCompany());
+        profile.setProfile(userInfo == null ? null : userInfo.getProfile());
+        profile.setArticleCount(countApprovedArticles(userId));
+        profile.setFollowCount(countActiveFollows(userId));
+        profile.setFanCount(countActiveFans(userId));
+        profile.setSelf(Objects.equals(currentUserId, userId));
+        profile.setFollowed(!Objects.equals(currentUserId, userId) && isFollowing(currentUserId, userId));
+        profile.setCreateTime(formatTime(user.getCreateTime()));
+        return profile;
+    }
+
+    @Override
+    public void updateCurrentUserProfile(Long userId, UserProfileUpdateReq req) {
+        UserDO user = requireUser(userId);
+        UserInfoDO userInfo = userInfoMapper.selectOne(new LambdaQueryWrapper<UserInfoDO>()
+                .eq(UserInfoDO::getUserId, userId)
+                .last("limit 1"));
+        if (userInfo == null) {
+            userInfo = new UserInfoDO();
+            userInfo.setUserId(userId);
+        }
+
+        userInfo.setUsername(normalizeText(req.getUsername()));
+        userInfo.setPhoto(normalizeText(req.getPhoto()));
+        userInfo.setPosition(normalizeText(req.getPosition()));
+        userInfo.setCompany(normalizeText(req.getCompany()));
+        userInfo.setProfile(normalizeText(req.getProfile()));
+
+        if (!StringUtils.hasText(userInfo.getUsername())) {
+            userInfo.setUsername(user.getUsername());
+        }
+
+        if (userInfo.getId() == null) {
+            userInfoMapper.insert(userInfo);
+            return;
+        }
+        userInfoMapper.updateById(userInfo);
+    }
+
+    @Override
+    public PageResult<ArticleListVO> getUserArticlePage(Long userId, Integer page, Integer size) {
+        validatePage(page, size);
+        requireUser(userId);
+        return articleService.getApprovedArticlesByUser(userId, page, size);
+    }
+
+    @Override
+    public PageResult<ArticleListVO> getUserCollectionArticlePage(Long userId, Integer page, Integer size) {
+        return getSelfFootArticlePage(userId, page, size, true);
+    }
+
+    @Override
+    public PageResult<ArticleListVO> getUserLikeArticlePage(Long userId, Integer page, Integer size) {
+        return getSelfFootArticlePage(userId, page, size, false);
     }
 
     /**
@@ -385,6 +496,43 @@ public class UserServiceImpl implements UserService {
         return count == null ? 0L : count;
     }
 
+    private long countApprovedArticles(Long userId) {
+        Long count = articleMapper.selectCount(new LambdaQueryWrapper<ArticleDO>()
+                .eq(ArticleDO::getUserId, userId)
+                .eq(ArticleDO::getStatus, PublishStatusConstants.APPROVED));
+        return count == null ? 0L : count;
+    }
+
+    private PageResult<ArticleListVO> getSelfFootArticlePage(Long userId, Integer page, Integer size, boolean collection) {
+        validatePage(page, size);
+        requireUser(userId);
+        ensureSelfAccess(userId);
+
+        LambdaQueryWrapper<UserFootDO> wrapper = new LambdaQueryWrapper<UserFootDO>()
+                .eq(UserFootDO::getUserId, userId)
+                .eq(UserFootDO::getDocumentType, DOCUMENT_TYPE_ARTICLE)
+                .orderByDesc(UserFootDO::getUpdateTime)
+                .orderByDesc(UserFootDO::getId);
+
+        if (collection) {
+            wrapper.eq(UserFootDO::getCollectionStat, 1);
+        } else {
+            wrapper.eq(UserFootDO::getLikeStat, 1);
+        }
+
+        Page<UserFootDO> footPage = userFootMapper.selectPage(new Page<>(page, size), wrapper);
+        List<UserFootDO> records = footPage.getRecords();
+        if (records == null || records.isEmpty()) {
+            return new PageResult<>(footPage.getTotal(), Collections.emptyList());
+        }
+
+        List<Long> articleIds = records.stream()
+                .map(UserFootDO::getDocumentId)
+                .filter(Objects::nonNull)
+                .toList();
+        return new PageResult<>(footPage.getTotal(), articleService.getApprovedArticlesByIds(articleIds));
+    }
+
     /**
      * 判断当前用户是否已关注目标用户。
      */
@@ -457,6 +605,21 @@ public class UserServiceImpl implements UserService {
         return "user-" + userId;
     }
 
+    private String normalizeText(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private Integer normalizeRole(Integer userRole) {
+        return userRole == null ? 0 : userRole;
+    }
+
+    private String formatTime(LocalDateTime time) {
+        return time == null ? null : TIME_FORMATTER.format(time);
+    }
+
     /**
      * 校验用户存在。
      */
@@ -500,10 +663,21 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    private void ensureSelfAccess(Long userId) {
+        Long currentUserId = getCurrentUserId();
+        if (currentUserId == null) {
+            throw new BusinessException(StatusEnum.AUTH_REQUIRED);
+        }
+        if (!Objects.equals(currentUserId, userId)) {
+            throw new BusinessException(StatusEnum.AUTH_FORBIDDEN);
+        }
+    }
+
     /**
      * 获取当前登录用户 ID。
      */
     private Long getCurrentUserId() {
-        return ReqInfoContext.getReqInfo().getUserId();
+        ReqInfoContext.ReqInfo reqInfo = ReqInfoContext.getReqInfo();
+        return reqInfo == null ? null : reqInfo.getUserId();
     }
 }

@@ -1,5 +1,8 @@
 package com.ying.tech.community.web.controller;
 
+import cn.dev33.satoken.exception.SaTokenException;
+import cn.dev33.satoken.stp.StpUtil;
+import com.ying.tech.community.core.exception.StatusEnum;
 import com.ying.tech.community.service.ai.req.ChatReq;
 import com.ying.tech.community.service.ai.service.ChatService;
 import com.ying.tech.community.service.ai.vo.ChatStreamVO;
@@ -25,15 +28,32 @@ public class AiController {
      * */
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
     public Flux<ServerSentEvent<ChatStreamVO>> chat(@RequestBody @Validated ChatReq req) {
+        try {
+            if (!StpUtil.isLogin()) {
+                return buildAuthRequiredStream();
+            }
+        } catch (SaTokenException e) {
+            return buildAuthRequiredStream();
+        }
 
-        // 调用 Service 层拿到已经封装好的聊天流
         Flux<ChatStreamVO> aiStream = chatService.streamChat(req.getSessionId(), req.getQuestion());
 
-        // 仅负责将聊天流包装为 SSE 事件流
         return aiStream
                 .map(chatStreamVO -> ServerSentEvent.<ChatStreamVO>builder()
                         .data(chatStreamVO)
                         .build());
+    }
+
+    private Flux<ServerSentEvent<ChatStreamVO>> buildAuthRequiredStream() {
+        ChatStreamVO body = ChatStreamVO.builder()
+                .content("")
+                .isEnd(true)
+                .errorCode(StatusEnum.AUTH_REQUIRED.getCode())
+                .errorMessage(StatusEnum.AUTH_REQUIRED.getMsg())
+                .build();
+        return Flux.just(ServerSentEvent.<ChatStreamVO>builder()
+                .data(body)
+                .build());
     }
 
 }

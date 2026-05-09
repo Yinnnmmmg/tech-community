@@ -11,11 +11,14 @@ import com.ying.tech.community.service.article.entity.ArticleDetailDO;
 import com.ying.tech.community.service.article.repository.mapper.ArticleDetailMapper;
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.article.service.ArticleAttachmentService;
+import com.ying.tech.community.service.article.service.ArticleCategoryService;
 import com.ying.tech.community.service.article.service.ArticleDetailService;
 import com.ying.tech.community.service.article.vo.ArticleDetailVO;
 import com.ying.tech.community.service.user.entity.UserDO;
+import com.ying.tech.community.service.user.entity.UserInfoDO;
 import com.ying.tech.community.service.user.entity.UserFootDO;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -46,7 +49,9 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     private final ArticleMapper articleMapper;
     private final ArticleDetailMapper articleDetailMapper;
     private final ArticleAttachmentService articleAttachmentService;
+    private final ArticleCategoryService articleCategoryService;
     private final UserMapper userMapper;
+    private final UserInfoMapper userInfoMapper;
     private final UserFootMapper userFootMapper;
     private final RedisTemplate<String, Object> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
@@ -56,14 +61,18 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     public ArticleDetailServiceImpl(ArticleMapper articleMapper,
                                     ArticleDetailMapper articleDetailMapper,
                                     ArticleAttachmentService articleAttachmentService,
+                                    ArticleCategoryService articleCategoryService,
                                     UserMapper userMapper,
+                                    UserInfoMapper userInfoMapper,
                                     UserFootMapper userFootMapper,
                                     RedisTemplate<String, Object> redisTemplate,
                                     StringRedisTemplate stringRedisTemplate) {
         this.articleMapper = articleMapper;
         this.articleDetailMapper = articleDetailMapper;
         this.articleAttachmentService = articleAttachmentService;
+        this.articleCategoryService = articleCategoryService;
         this.userMapper = userMapper;
+        this.userInfoMapper = userInfoMapper;
         this.userFootMapper = userFootMapper;
         this.redisTemplate = redisTemplate;
         this.stringRedisTemplate = stringRedisTemplate;
@@ -141,7 +150,10 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         vo.setArticleId(article.getId());
         vo.setTitle(article.getTitle());
         vo.setContent(articleDetailDO.getContent());
+        vo.setAuthorId(article.getUserId());
         vo.setAuthorName(loadAuthorName(article.getUserId()));
+        vo.setCategoryId(article.getCategoryId());
+        vo.setCategoryName(articleCategoryService.getCategoryName(article.getCategoryId()));
         vo.setCreateTime(formatTime(article.getCreateTime()));
         vo.setCoverUrl(article.getPicture());
         vo.setLikeCount(article.getLikeCount() == null ? 0L : article.getLikeCount().longValue());
@@ -160,6 +172,12 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     private String loadAuthorName(Long userId) {
         if (userId == null) {
             return null;
+        }
+        UserInfoDO userInfo = userInfoMapper.selectOne(new QueryWrapper<UserInfoDO>()
+                .eq("user_id", userId)
+                .last("limit 1"));
+        if (userInfo != null && org.springframework.util.StringUtils.hasText(userInfo.getUsername())) {
+            return userInfo.getUsername();
         }
         UserDO user = userMapper.selectById(userId);
         return user == null ? null : user.getUsername();

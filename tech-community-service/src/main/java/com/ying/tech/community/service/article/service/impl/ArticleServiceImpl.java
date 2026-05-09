@@ -1,9 +1,12 @@
 package com.ying.tech.community.service.article.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ying.tech.community.core.common.CursorPageResult;
+import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.constants.PublishStatusConstants;
 import com.ying.tech.community.core.constants.RedisConstants;
 import com.ying.tech.community.core.exception.BusinessException;
@@ -21,15 +24,18 @@ import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.article.req.ArticlePostReq;
 import com.ying.tech.community.service.article.req.ArticleUpdateReq;
 import com.ying.tech.community.service.article.service.ArticleAttachmentService;
+import com.ying.tech.community.service.article.service.ArticleCategoryService;
 import com.ying.tech.community.service.article.service.ArticleService;
 import com.ying.tech.community.service.article.vo.ArticleCollectVO;
 import com.ying.tech.community.service.article.vo.ArticleLikeVO;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.user.entity.UserDO;
+import com.ying.tech.community.service.user.entity.UserInfoDO;
 import com.ying.tech.community.service.user.entity.UserFootDO;
 import com.ying.tech.community.service.user.message.RedisCollectToDBMessage;
 import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
@@ -78,7 +84,9 @@ public class ArticleServiceImpl implements ArticleService {
     private final ArticleDetailMapper articleDetailMapper;
     private final UserFootMapper userFootMapper;
     private final UserMapper userMapper;
+    private final UserInfoMapper userInfoMapper;
     private final ArticleAttachmentService articleAttachmentService;
+    private final ArticleCategoryService articleCategoryService;
     private final ArticleEmbeddingService articleEmbeddingService;
     private final ArticleESRepository articleESRepository;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -89,7 +97,9 @@ public class ArticleServiceImpl implements ArticleService {
                               ArticleDetailMapper articleDetailMapper,
                               UserFootMapper userFootMapper,
                               UserMapper userMapper,
+                              UserInfoMapper userInfoMapper,
                               ArticleAttachmentService articleAttachmentService,
+                              ArticleCategoryService articleCategoryService,
                               ArticleEmbeddingService articleEmbeddingService,
                               ArticleESRepository articleESRepository,
                               RedisTemplate<String, Object> redisTemplate,
@@ -99,7 +109,9 @@ public class ArticleServiceImpl implements ArticleService {
         this.articleDetailMapper = articleDetailMapper;
         this.userFootMapper = userFootMapper;
         this.userMapper = userMapper;
+        this.userInfoMapper = userInfoMapper;
         this.articleAttachmentService = articleAttachmentService;
+        this.articleCategoryService = articleCategoryService;
         this.articleEmbeddingService = articleEmbeddingService;
         this.articleESRepository = articleESRepository;
         this.redisTemplate = redisTemplate;
@@ -117,6 +129,7 @@ public class ArticleServiceImpl implements ArticleService {
     public Long publishArticle(ArticlePostReq articlePostReq) {
         Long userId = ReqInfoContext.getReqInfo().getUserId();
         log.info("publish article, userId={}", userId);
+        validateCategory(articlePostReq.getCategoryId());
 
         ArticleDO article = new ArticleDO();
         BeanUtil.copyProperties(articlePostReq, article);
@@ -156,6 +169,7 @@ public class ArticleServiceImpl implements ArticleService {
         ArticleDO article = requireOwnedArticle(articleId);
         Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
         log.info("update article, articleId={}, userId={}", articleId, currentUserId);
+        validateCategory(articleUpdateReq.getCategoryId());
 
         List<ArticleAttachmentDO> boundAttachments = articleAttachmentService.replaceAttachmentsOnArticle(
                 articleId,
@@ -207,7 +221,19 @@ public class ArticleServiceImpl implements ArticleService {
         ArticleDO article = requireOwnedArticle(articleId);
         Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
         log.info("delete article, articleId={}, userId={}", articleId, currentUserId);
+        deleteArticleInternal(article);
+    }
 
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void deleteArticleByAdmin(Long articleId) {
+        ArticleDO article = requireExistingArticle(articleId);
+        log.info("admin delete article, articleId={}", articleId);
+        deleteArticleInternal(article);
+    }
+
+    private void deleteArticleInternal(ArticleDO article) {
+        Long articleId = article.getId();
         articleAttachmentService.releaseAttachmentsOnArticle(articleId);
         articleDetailMapper.delete(new QueryWrapper<ArticleDetailDO>().eq("article_id", articleId));
         articleMapper.deleteById(article.getId());
@@ -222,11 +248,17 @@ public class ArticleServiceImpl implements ArticleService {
      * 若时间轴缓存不存在或为空，则退化为数据库分页查询。
      */
     @Override
-    public CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize) {
-        log.info("query article list, cursor={}, pageSize={}", cursor, pageSize);
+    public CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize, Long categoryId) {
+        Long normalizedCursor = (cursor == null || cursor <= 1L) ? null : cursor;
+        log.info("query article list, cursor={}, normalizedCursor={}, pageSize={}, categoryId={}",
+                cursor, normalizedCursor, pageSize, categoryId);
+
+        if (categoryId != null) {
+            return queryArticleListFromDB(normalizedCursor, pageSize, categoryId);
+        }
 
         String articleListKey = RedisConstants.TECH_COMMUNITY_ARTICLE_LIST;
-        long maxScore = (cursor == null || cursor <= 0) ? System.currentTimeMillis() : cursor - 1;
+        long maxScore = normalizedCursor == null ? System.currentTimeMillis() : normalizedCursor - 1;
         Set<ZSetOperations.TypedTuple<Object>> typedTuples = redisTemplate.opsForZSet().reverseRangeByScoreWithScores(
                 articleListKey,
                 0,
@@ -240,7 +272,7 @@ public class ArticleServiceImpl implements ArticleService {
             if (Boolean.FALSE.equals(hasKey) || hasKey == null) {
                 rabbitTemplate.convertAndSend("article.direct", "timeline.rebuild", new TimelineRebuildMessage(System.currentTimeMillis()));
             }
-            return queryArticleListFromDB(cursor, pageSize);
+            return queryArticleListFromDB(normalizedCursor, pageSize, null);
         }
 
         List<String> orderedIds = new ArrayList<>();
@@ -306,14 +338,53 @@ public class ArticleServiceImpl implements ArticleService {
         return new CursorPageResult<>(nextCursor, enrichArticleList(finalArticles));
     }
 
+    @Override
+    public PageResult<ArticleListVO> getApprovedArticlesByUser(Long userId, Integer page, Integer size) {
+        Page<ArticleDO> articlePage = articleMapper.selectPage(
+                new Page<>(page, size),
+                new LambdaQueryWrapper<ArticleDO>()
+                        .eq(ArticleDO::getUserId, userId)
+                        .eq(ArticleDO::getStatus, PublishStatusConstants.APPROVED)
+                        .orderByDesc(ArticleDO::getCreateTime)
+                        .orderByDesc(ArticleDO::getId));
+        return new PageResult<>(articlePage.getTotal(), enrichArticleList(articlePage.getRecords()));
+    }
+
+    @Override
+    public List<ArticleListVO> getApprovedArticlesByIds(List<Long> articleIds) {
+        if (CollectionUtils.isEmpty(articleIds)) {
+            return Collections.emptyList();
+        }
+        List<Long> uniqueIds = articleIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (CollectionUtils.isEmpty(uniqueIds)) {
+            return Collections.emptyList();
+        }
+
+        Map<Long, ArticleDO> articleMap = articleMapper.selectList(new LambdaQueryWrapper<ArticleDO>()
+                        .in(ArticleDO::getId, uniqueIds)
+                        .eq(ArticleDO::getStatus, PublishStatusConstants.APPROVED))
+                .stream()
+                .collect(Collectors.toMap(ArticleDO::getId, article -> article, (left, right) -> left));
+
+        List<ArticleDO> orderedArticles = uniqueIds.stream()
+                .map(articleMap::get)
+                .filter(Objects::nonNull)
+                .toList();
+        return enrichArticleList(orderedArticles);
+    }
+
     /**
      * 数据库游标分页兜底查询。
      */
-    private CursorPageResult<ArticleListVO> queryArticleListFromDB(Long cursor, Integer pageSize) {
+    private CursorPageResult<ArticleListVO> queryArticleListFromDB(Long cursor, Integer pageSize, Long categoryId) {
         QueryWrapper<ArticleDO> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", PublishStatusConstants.APPROVED)
                 .orderByDesc("create_time")
                 .last("LIMIT " + pageSize);
+
+        if (categoryId != null) {
+            queryWrapper.eq("category_id", categoryId);
+        }
 
         if (cursor != null && cursor > 0) {
             LocalDateTime cursorTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(cursor), ZoneId.systemDefault());
@@ -484,14 +555,20 @@ public class ArticleServiceImpl implements ArticleService {
         Map<Long, String> authorNameMap = loadAuthorNameMap(articles.stream()
                 .map(ArticleDO::getUserId)
                 .collect(Collectors.toList()));
+        Map<Long, String> categoryNameMap = loadCategoryNameMap(articles.stream()
+                .map(ArticleDO::getCategoryId)
+                .collect(Collectors.toList()));
 
         List<ArticleListVO> result = new ArrayList<>(articles.size());
         for (ArticleDO article : articles) {
             long attachmentCount = attachmentCountMap.getOrDefault(article.getId(), 0L);
             ArticleListVO vo = new ArticleListVO();
             vo.setArticleId(article.getId());
+            vo.setAuthorId(article.getUserId());
             vo.setTitle(article.getTitle());
             vo.setSummary(article.getSummary());
+            vo.setCategoryId(article.getCategoryId());
+            vo.setCategoryName(categoryNameMap.get(article.getCategoryId()));
             vo.setAuthorName(authorNameMap.get(article.getUserId()));
             vo.setCreateTime(formatTime(article.getCreateTime()));
             vo.setCoverUrl(article.getPicture());
@@ -503,6 +580,28 @@ public class ArticleServiceImpl implements ArticleService {
             result.add(vo);
         }
         return result;
+    }
+
+    private Map<Long, String> loadCategoryNameMap(List<Long> categoryIds) {
+        if (CollectionUtils.isEmpty(categoryIds)) {
+            return Collections.emptyMap();
+        }
+
+        List<Long> uniqueCategoryIds = categoryIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (CollectionUtils.isEmpty(uniqueCategoryIds)) {
+            return Collections.emptyMap();
+        }
+
+        Map<Long, String> categoryNameMap = new HashMap<>();
+        for (var category : articleCategoryService.listEnabledCategories()) {
+            if (uniqueCategoryIds.contains(category.getId())) {
+                categoryNameMap.put(category.getId(), category.getName());
+            }
+        }
+        return categoryNameMap;
     }
 
     /**
@@ -517,8 +616,17 @@ public class ArticleServiceImpl implements ArticleService {
             return Collections.emptyMap();
         }
         List<UserDO> users = userMapper.selectBatchIds(uniqueUserIds);
+        Map<Long, UserInfoDO> userInfoMap = userInfoMapper.selectList(new LambdaQueryWrapper<UserInfoDO>()
+                        .in(UserInfoDO::getUserId, uniqueUserIds))
+                .stream()
+                .collect(Collectors.toMap(UserInfoDO::getUserId, userInfo -> userInfo, (left, right) -> left));
         Map<Long, String> authorMap = new LinkedHashMap<>();
         for (UserDO user : users) {
+            UserInfoDO userInfo = userInfoMap.get(user.getId());
+            if (userInfo != null && StringUtils.hasText(userInfo.getUsername())) {
+                authorMap.put(user.getId(), userInfo.getUsername());
+                continue;
+            }
             authorMap.put(user.getId(), user.getUsername());
         }
         return authorMap;
@@ -537,6 +645,12 @@ public class ArticleServiceImpl implements ArticleService {
             }
         }
         return null;
+    }
+
+    private void validateCategory(Long categoryId) {
+        if (!articleCategoryService.existsEnabledCategory(categoryId)) {
+            throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
     }
 
     /**
@@ -612,13 +726,21 @@ public class ArticleServiceImpl implements ArticleService {
      * 校验文章存在且归当前登录用户所有。
      */
     private ArticleDO requireOwnedArticle(Long articleId) {
-        ArticleDO article = articleMapper.selectById(articleId);
+        ArticleDO article = requireExistingArticle(articleId);
         if (article == null) {
             throw new BusinessException(StatusEnum.ARTICLE_NOT_FOUND);
         }
         Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
         if (!Objects.equals(article.getUserId(), currentUserId)) {
             throw new BusinessException(StatusEnum.ARTICLE_ACCESS_DENIED);
+        }
+        return article;
+    }
+
+    private ArticleDO requireExistingArticle(Long articleId) {
+        ArticleDO article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new BusinessException(StatusEnum.ARTICLE_NOT_FOUND);
         }
         return article;
     }
