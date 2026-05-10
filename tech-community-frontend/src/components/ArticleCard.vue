@@ -112,8 +112,8 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 20px;
-  padding: 18px;
-  border-radius: 6px;
+  padding: 20px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: var(--tc-shadow-xs);
   transition:
@@ -135,7 +135,7 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
 }
 
 .article-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   box-shadow: var(--tc-shadow-md);
 }
 
@@ -276,7 +276,7 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
   width: 180px;
   height: 104px;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 8px;
   background: #eef1f5;
 }
 
