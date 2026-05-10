@@ -18,6 +18,11 @@ const emit = defineEmits<{
 
 const uploading = ref(false)
 const attachments = ref<ArticleAttachment[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+
+function triggerUpload() {
+  fileInput.value?.click()
+}
 
 watch(
   () => props.initialAttachments,
@@ -76,13 +81,11 @@ function formatSize(size: number) {
 
 <template>
   <div class="uploader">
-    <label class="upload-button">
-      <input type="file" multiple :disabled="uploading" @change="onFileChange" />
-      <el-button class="icon-button" :loading="uploading" native-type="button">
-        <Upload :size="16" />
-        <span>上传附件</span>
-      </el-button>
-    </label>
+    <input ref="fileInput" type="file" multiple :disabled="uploading" @change="onFileChange" />
+    <el-button class="icon-button" :loading="uploading" native-type="button" @click="triggerUpload">
+      <Upload :size="16" />
+      <span>上传附件</span>
+    </el-button>
 
     <div v-if="attachments.length" class="attachment-list">
       <div v-for="item in attachments" :key="item.attachmentId" class="attachment-item">
@@ -102,12 +105,7 @@ function formatSize(size: number) {
   gap: 10px;
 }
 
-.upload-button {
-  display: inline-flex;
-  width: fit-content;
-}
-
-.upload-button input {
+.uploader input[type="file"] {
   position: absolute;
   width: 1px;
   height: 1px;

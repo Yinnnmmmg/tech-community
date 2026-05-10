@@ -113,9 +113,11 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 20px;
   padding: 20px;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: var(--tc-shadow-xs);
+  border-radius: 16px;
+  background: var(--tc-panel);
+  backdrop-filter: var(--tc-glass-blur);
+  -webkit-backdrop-filter: var(--tc-glass-blur);
+  box-shadow: var(--tc-shadow-xs), var(--tc-shadow-glow);
   transition:
     transform var(--tc-duration) var(--tc-ease),
     box-shadow var(--tc-duration) var(--tc-ease);
@@ -157,7 +159,7 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
 .article-card__category {
   width: fit-content;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--tc-brand-soft);
   color: var(--tc-brand);
   font-size: 12px;
@@ -232,8 +234,8 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #eef1f5;
-  color: #6a7280;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--tc-text-muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -258,7 +260,7 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: #c5ccd8;
+  background: var(--tc-text-muted);
   content: '';
   transform: translateY(-50%);
 }
@@ -276,8 +278,8 @@ const titleText = computed(() => String(props.article.title ?? '').replace(/<[^>
   width: 180px;
   height: 104px;
   overflow: hidden;
-  border-radius: 8px;
-  background: #eef1f5;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .article-card__thumb img {

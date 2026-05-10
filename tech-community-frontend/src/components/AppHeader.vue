@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, Bot, CircleUserRound, Home, LogIn, LogOut, PenLine, Search } from 'lucide-vue-next'
+import { Bell, Bot, CircleUserRound, Home, LogIn, LogOut, PenLine } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -33,10 +33,6 @@ async function handleLogout() {
         <RouterLink :to="{ name: 'home' }" class="nav__item">
           <Home :size="17" />
           <span>首页</span>
-        </RouterLink>
-        <RouterLink :to="{ name: 'search' }" class="nav__item">
-          <Search :size="17" />
-          <span>搜索</span>
         </RouterLink>
         <RouterLink :to="{ name: 'ai-chat' }" class="nav__item">
           <Bot :size="17" />
@@ -84,10 +80,11 @@ async function handleLogout() {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: rgba(24, 24, 27, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
 .topbar__inner {
@@ -104,7 +101,7 @@ async function handleLogout() {
   align-items: center;
   flex: 0 0 auto;
   gap: 10px;
-  color: #ffffff;
+  color: var(--tc-text-strong);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -138,7 +135,7 @@ async function handleLogout() {
   gap: 6px;
   min-height: 38px;
   padding: 0 12px;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--tc-text-muted);
   font-size: 14px;
   white-space: nowrap;
   position: relative;
@@ -159,11 +156,11 @@ async function handleLogout() {
 }
 
 .nav__item:hover {
-  color: #ffffff;
+  color: var(--tc-brand);
 }
 
 .nav__item.router-link-active {
-  color: #ffffff;
+  color: var(--tc-text-strong);
 }
 
 .nav__item.router-link-active::after {
@@ -180,7 +177,7 @@ async function handleLogout() {
 .account__name {
   max-width: 116px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--tc-text-muted);
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -194,6 +191,7 @@ async function handleLogout() {
 .write-button {
   border-color: var(--tc-brand);
   background: var(--tc-brand);
+  color: #ffffff;
   transition: all var(--tc-duration) var(--tc-ease);
 }
 
@@ -202,9 +200,9 @@ async function handleLogout() {
 }
 
 .ghost-button {
-  border-color: rgba(255, 255, 255, 0.24);
+  border-color: var(--tc-border);
   background: transparent;
-  color: #ffffff;
+  color: var(--tc-text-muted);
   transition: all var(--tc-duration) var(--tc-ease);
 }
 

@@ -171,6 +171,8 @@ export interface UserProfile {
   articleCount: number
   followCount: number
   fanCount: number
+  collectionCount: number
+  likeCount: number
   followed: boolean
   self: boolean
   createTime?: string

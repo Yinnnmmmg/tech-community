@@ -8,12 +8,41 @@ import type {
   UserProfile,
   UserProfileUpdateReq
 } from './types'
+import { resolveAssetUrl } from '@/utils/asset'
+
+function normalizeUserProfile(profile: UserProfile): UserProfile {
+  return {
+    ...profile,
+    photo: resolveAssetUrl(profile.photo)
+  }
+}
+
+function normalizeFollowUser(user: UserFollowListItem): UserFollowListItem {
+  return {
+    ...user,
+    photo: resolveAssetUrl(user.photo)
+  }
+}
+
+function normalizeArticleListItem(article: ArticleListItem): ArticleListItem {
+  return {
+    ...article,
+    coverUrl: resolveAssetUrl(article.coverUrl)
+  }
+}
+
+function normalizePageResult<T>(page: PageResult<T>, mapper: (item: T) => T): PageResult<T> {
+  return {
+    ...page,
+    records: page.records.map(mapper)
+  }
+}
 
 export function getUserProfile(userId: number) {
   return request<UserProfile>({
     url: `/user/${userId}/profile`,
     method: 'get'
-  })
+  }).then(normalizeUserProfile)
 }
 
 export function updateCurrentUserProfile(data: UserProfileUpdateReq) {
@@ -29,7 +58,7 @@ export function listUserArticles(userId: number, page = 1, size = 10) {
     url: `/user/${userId}/articles`,
     method: 'get',
     params: { page, size }
-  })
+  }).then((result) => normalizePageResult(result, normalizeArticleListItem))
 }
 
 export function listUserCollectionArticles(userId: number, page = 1, size = 10) {
@@ -37,7 +66,7 @@ export function listUserCollectionArticles(userId: number, page = 1, size = 10) 
     url: `/user/${userId}/collections/articles`,
     method: 'get',
     params: { page, size }
-  })
+  }).then((result) => normalizePageResult(result, normalizeArticleListItem))
 }
 
 export function listUserLikeArticles(userId: number, page = 1, size = 10) {
@@ -45,7 +74,7 @@ export function listUserLikeArticles(userId: number, page = 1, size = 10) {
     url: `/user/${userId}/likes/articles`,
     method: 'get',
     params: { page, size }
-  })
+  }).then((result) => normalizePageResult(result, normalizeArticleListItem))
 }
 
 export function followUser(targetUserId: number) {
@@ -84,7 +113,7 @@ export function getFollowList(userId: number, page = 1, size = 10) {
     url: `/user/${userId}/follows`,
     method: 'get',
     params: { page, size }
-  })
+  }).then((result) => normalizePageResult(result, normalizeFollowUser))
 }
 
 export function getFanList(userId: number, page = 1, size = 10) {
@@ -92,5 +121,5 @@ export function getFanList(userId: number, page = 1, size = 10) {
     url: `/user/${userId}/fans`,
     method: 'get',
     params: { page, size }
-  })
+  }).then((result) => normalizePageResult(result, normalizeFollowUser))
 }

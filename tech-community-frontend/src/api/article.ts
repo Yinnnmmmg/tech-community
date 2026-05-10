@@ -11,6 +11,14 @@ import type {
   CursorPageResult,
   PageResult
 } from './types'
+import { resolveAssetUrl } from '@/utils/asset'
+
+function normalizeAttachment(attachment: ArticleAttachment): ArticleAttachment {
+  return {
+    ...attachment,
+    url: resolveAssetUrl(attachment.url)
+  }
+}
 
 export function listArticles(cursor = 0, pageSize = 10, categoryId?: number) {
   return request<CursorPageResult<ArticleListItem>>({
@@ -39,7 +47,11 @@ export function getArticleDetail(articleId: number) {
   return request<ArticleDetail>({
     url: `/article/detail/${articleId}`,
     method: 'get'
-  })
+  }).then((detail) => ({
+    ...detail,
+    coverUrl: resolveAssetUrl(detail.coverUrl),
+    attachments: detail.attachments.map(normalizeAttachment)
+  }))
 }
 
 export function likeArticle(articleId: number) {
@@ -87,6 +99,7 @@ export function uploadAttachment(file: File) {
   return request<ArticleAttachment>({
     url: '/article/attachment/upload',
     method: 'post',
-    data: formData
-  })
+    data: formData,
+    timeout: 60000
+  }).then(normalizeAttachment)
 }

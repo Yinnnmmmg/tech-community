@@ -1,6 +1,7 @@
 package com.ying.tech.community.service.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import cn.dev33.satoken.stp.StpUtil;
 import com.ying.tech.community.core.common.PageResult;
@@ -122,6 +123,14 @@ public class UserServiceImpl implements UserService {
         user.setUserRole(0);
         user.setDeleted(0);
         userMapper.insert(user);
+
+        UserInfoDO userInfo = new UserInfoDO();
+        userInfo.setUserId(user.getId());
+        userInfo.setUsername(user.getUsername());
+        userInfo.setIp("{}");
+        userInfo.setDeleted(0);
+        userInfoMapper.insert(userInfo);
+
         return user.getId();
     }
 
@@ -195,6 +204,8 @@ public class UserServiceImpl implements UserService {
         profile.setArticleCount(countApprovedArticles(userId));
         profile.setFollowCount(countActiveFollows(userId));
         profile.setFanCount(countActiveFans(userId));
+        profile.setCollectionCount(countUserFootStats(userId, UserFootDO::getCollectionStat));
+        profile.setLikeCount(countUserFootStats(userId, UserFootDO::getLikeStat));
         profile.setSelf(Objects.equals(currentUserId, userId));
         profile.setFollowed(!Objects.equals(currentUserId, userId) && isFollowing(currentUserId, userId));
         profile.setCreateTime(formatTime(user.getCreateTime()));
@@ -500,6 +511,14 @@ public class UserServiceImpl implements UserService {
         Long count = articleMapper.selectCount(new LambdaQueryWrapper<ArticleDO>()
                 .eq(ArticleDO::getUserId, userId)
                 .eq(ArticleDO::getStatus, PublishStatusConstants.APPROVED));
+        return count == null ? 0L : count;
+    }
+
+    private long countUserFootStats(Long userId, SFunction<UserFootDO, Integer> fieldGetter) {
+        Long count = userFootMapper.selectCount(new LambdaQueryWrapper<UserFootDO>()
+                .eq(UserFootDO::getUserId, userId)
+                .eq(UserFootDO::getDocumentType, DOCUMENT_TYPE_ARTICLE)
+                .eq(fieldGetter, 1));
         return count == null ? 0L : count;
     }
 

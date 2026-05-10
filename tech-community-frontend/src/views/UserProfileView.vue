@@ -2,9 +2,6 @@
 import {
   CalendarDays,
   Edit3,
-  FileHeart,
-  FileText,
-  Heart,
   MapPin,
   UserMinus,
   UserPlus,
@@ -26,6 +23,7 @@ import {
   unfollowUser,
   updateCurrentUserProfile
 } from '@/api/user'
+import { uploadAttachment } from '@/api/article'
 import type { ArticleListItem, UserFollowListItem, UserProfile, UserProfileUpdateReq } from '@/api/types'
 import ArticleCard from '@/components/ArticleCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -62,18 +60,49 @@ const editForm = reactive<UserProfileUpdateReq>({
   company: '',
   profile: ''
 })
+const photoPreviewUrl = ref('')
+const photoUploading = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+const profilePhotoLoadFailed = ref(false)
+const editPhotoLoadFailed = ref(false)
+
+async function handlePhotoUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const objectUrl = URL.createObjectURL(file)
+  photoPreviewUrl.value = objectUrl
+  editPhotoLoadFailed.value = false
+  photoUploading.value = true
+  try {
+    const attachment = await uploadAttachment(file)
+    if (attachment?.url) {
+      editForm.photo = attachment.url
+      // 不立即清除本地预览，保持可见直到对话框关闭
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '头像上传失败')
+    photoPreviewUrl.value = ''
+    URL.revokeObjectURL(objectUrl)
+  } finally {
+    photoUploading.value = false
+    input.value = ''
+  }
+}
 
 const isSelf = computed(() => Boolean(profile.value?.self))
 const canEdit = computed(() => Boolean(authStore.isAuthenticated && isSelf.value))
 
 const visibleTabs = computed(() => {
-  const tabs: Array<{ key: TabKey; label: string }> = [{ key: 'articles', label: isSelf.value ? '我的文章' : 'TA 的文章' }]
+  const tabs: Array<{ key: TabKey; label: string }> = [
+    { key: 'articles', label: (isSelf.value ? '我的文章' : 'TA 的文章') + (profile.value ? ` (${profile.value.articleCount})` : '') }
+  ]
   if (isSelf.value) {
     tabs.push({ key: 'collections', label: '我的收藏' })
     tabs.push({ key: 'likes', label: '我的点赞' })
   }
-  tabs.push({ key: 'follows', label: '关注' })
-  tabs.push({ key: 'fans', label: '粉丝' })
+  tabs.push({ key: 'follows', label: '关注' + (profile.value ? ` (${profile.value.followCount})` : '') })
+  tabs.push({ key: 'fans', label: '粉丝' + (profile.value ? ` (${profile.value.fanCount})` : '') })
   return tabs
 })
 
@@ -125,6 +154,7 @@ async function loadProfile() {
   loadingProfile.value = true
   try {
     profile.value = await getUserProfile(userId.value)
+    profilePhotoLoadFailed.value = false
   } catch (error) {
     profile.value = null
     ElMessage.error(error instanceof Error ? error.message : '个人主页加载失败')
@@ -182,6 +212,8 @@ function openEditDialog() {
   editForm.position = profile.value.position ?? ''
   editForm.company = profile.value.company ?? ''
   editForm.profile = profile.value.profile ?? ''
+  photoPreviewUrl.value = ''
+  editPhotoLoadFailed.value = false
   editVisible.value = true
 }
 
@@ -199,6 +231,12 @@ async function saveProfile() {
       authStore.user = await getCurrentUser()
     }
     editVisible.value = false
+    // 乐观更新本地 profile，确保头像和名称立即反映修改
+    if (profile.value) {
+      if (editForm.photo) profile.value.photo = editForm.photo
+      if (editForm.username) profile.value.username = editForm.username
+      profilePhotoLoadFailed.value = false
+    }
     ElMessage.success('个人资料已更新')
     await loadProfile()
   } catch (error) {
@@ -242,6 +280,14 @@ async function toggleUserFollow(user: UserFollowListItem) {
     ElMessage.error(error instanceof Error ? error.message : '关注操作失败')
   }
 }
+
+function handleProfilePhotoError() {
+  profilePhotoLoadFailed.value = true
+}
+
+function handleEditPhotoError() {
+  editPhotoLoadFailed.value = true
+}
 </script>
 
 <template>
@@ -251,7 +297,7 @@ async function toggleUserFollow(user: UserFollowListItem) {
     <section class="profile-hero surface">
       <div class="profile-hero__main">
         <div class="profile-avatar">
-          <img v-if="profile.photo" :src="profile.photo" alt="" />
+          <img v-if="profile.photo && !profilePhotoLoadFailed" :src="profile.photo" alt="" @error="handleProfilePhotoError" />
           <span v-else>{{ (profile.username || 'U').slice(0, 1) }}</span>
         </div>
 
@@ -291,34 +337,6 @@ async function toggleUserFollow(user: UserFollowListItem) {
           <span>{{ profile.followed ? '已关注' : '关注' }}</span>
         </el-button>
       </div>
-    </section>
-
-    <section class="profile-stats">
-      <article class="stat-card surface">
-        <FileText :size="18" />
-        <strong>{{ profile.articleCount }}</strong>
-        <span>文章</span>
-      </article>
-      <article v-if="isSelf" class="stat-card surface">
-        <FileHeart :size="18" />
-        <strong>{{ profile.followCount }}</strong>
-        <span>关注中</span>
-      </article>
-      <article v-if="isSelf" class="stat-card surface">
-        <Heart :size="18" />
-        <strong>{{ profile.fanCount }}</strong>
-        <span>粉丝</span>
-      </article>
-      <article v-if="!isSelf" class="stat-card surface">
-        <Users :size="18" />
-        <strong>{{ profile.followCount }}</strong>
-        <span>关注</span>
-      </article>
-      <article v-if="!isSelf" class="stat-card surface">
-        <Users :size="18" />
-        <strong>{{ profile.fanCount }}</strong>
-        <span>粉丝</span>
-      </article>
     </section>
 
     <section class="profile-content surface">
@@ -394,8 +412,18 @@ async function toggleUserFollow(user: UserFollowListItem) {
         <el-form-item label="显示名称">
           <el-input v-model="editForm.username" maxlength="32" placeholder="用于前台展示的昵称" />
         </el-form-item>
-        <el-form-item label="头像链接">
-          <el-input v-model="editForm.photo" placeholder="填写图片 URL" />
+        <el-form-item label="头像">
+          <div class="avatar-upload">
+            <div class="avatar-upload__preview">
+              <img v-if="photoPreviewUrl" :src="photoPreviewUrl" alt="" />
+              <img v-else-if="editForm.photo && !editPhotoLoadFailed" :src="editForm.photo" alt="" @error="handleEditPhotoError" />
+              <span v-else>{{ (editForm.username || 'U').slice(0, 1) }}</span>
+            </div>
+            <input ref="fileInput" type="file" accept="image/*" @change="handlePhotoUpload" />
+            <el-button :loading="photoUploading" native-type="button" @click="fileInput?.click()">
+              选择图片
+            </el-button>
+          </div>
         </el-form-item>
         <div class="form-grid">
           <el-form-item label="职位">
@@ -512,25 +540,6 @@ async function toggleUserFollow(user: UserFollowListItem) {
   flex: 0 0 auto;
 }
 
-.profile-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.stat-card {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-  padding: 18px;
-  color: var(--tc-text-muted);
-}
-
-.stat-card strong {
-  color: var(--tc-text-strong);
-  font-size: 24px;
-}
-
 .profile-content {
   padding: 22px;
 }
@@ -602,6 +611,40 @@ async function toggleUserFollow(user: UserFollowListItem) {
   padding-top: 20px;
 }
 
+.avatar-upload {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.avatar-upload input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.avatar-upload__preview {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #24292f, var(--tc-brand));
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.avatar-upload__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -614,7 +657,6 @@ async function toggleUserFollow(user: UserFollowListItem) {
     flex-direction: column;
   }
 
-  .profile-stats,
   .form-grid {
     grid-template-columns: 1fr;
   }

@@ -1,5 +1,6 @@
 import { request } from './http'
 import type { User } from './types'
+import { resolveAssetUrl } from '@/utils/asset'
 
 export function login(username: string, password: string) {
   return request<string>({
@@ -28,5 +29,8 @@ export function getCurrentUser() {
   return request<User>({
     url: '/user/current',
     method: 'get'
-  })
+  }).then((user) => ({
+    ...user,
+    photo: resolveAssetUrl(user.photo)
+  }))
 }

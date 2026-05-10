@@ -60,8 +60,12 @@ async function submit() {
       attachmentIds: form.attachmentIds
     }
     const id = isEdit.value ? await updateArticle(articleId.value, payload) : await publishArticle(payload)
-    ElMessage.success(isEdit.value ? '文章已更新' : '文章已发布')
-    router.push({ name: 'article-detail', params: { id } })
+    ElMessage.success(isEdit.value ? '文章已更新' : '文章已发布，正在审核中')
+    if (isEdit.value) {
+      router.push({ name: 'article-detail', params: { id } })
+    } else {
+      router.push({ name: 'home' })
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败')
   } finally {

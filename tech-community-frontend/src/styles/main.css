@@ -4,35 +4,39 @@
     "Geist", "Geist Fallback", "Microsoft YaHei", "PingFang SC", system-ui,
     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #2d3138;
-  background: #f7f8fa;
+  background: #f0f2f5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  /* Brand — desaturated to ~78% per Taste Skill */
+  /* Brand */
   --tc-brand: #e8650f;
   --tc-brand-hover: #f07b2e;
-  --tc-brand-soft: #fff4eb;
+  --tc-brand-soft: rgba(232, 101, 15, 0.10);
   --tc-brand-red: #e65151;
   --tc-dark: #18181b;
   --tc-text: #2d3138;
   --tc-text-strong: #111827;
-  --tc-text-muted: #8a94a6;
-  --tc-border: #e5e8ef;
-  --tc-bg: #f7f8fa;
-  --tc-panel: #ffffff;
+  --tc-text-muted: #7a8499;
+  --tc-border: rgba(0, 0, 0, 0.06);
+  --tc-bg: #f0f2f5;
+  --tc-panel: rgba(255, 255, 255, 0.68);
 
-  /* Tinted shadows instead of generic rgba(31,41,55,x) */
-  --tc-shadow-xs: 0 1px 3px rgba(24, 24, 27, 0.06);
-  --tc-shadow-sm: 0 4px 12px rgba(24, 24, 27, 0.08);
-  --tc-shadow-md: 0 8px 24px rgba(24, 24, 27, 0.10);
-  --tc-shadow-lg: 0 16px 40px rgba(24, 24, 27, 0.12);
+  /* Glass shadows — softer, more diffused */
+  --tc-shadow-xs: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --tc-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --tc-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --tc-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.10);
+  --tc-shadow-glow: 0 0 0 1px rgba(255, 255, 255, 0.5);
 
-  /* Taste Skill recommended motion curve */
+  /* Motion */
   --tc-ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --tc-duration: 0.2s;
+  --tc-duration: 0.25s;
 
   /* Focus ring */
   --tc-focus-ring: 0 0 0 3px rgba(232, 101, 15, 0.28);
+
+  /* Glass blur */
+  --tc-glass-blur: blur(16px);
 
   --el-color-primary: #e8650f;
   --el-color-primary-light-3: #f07b2e;
@@ -41,6 +45,20 @@
   --el-color-primary-light-8: #fadcc2;
   --el-color-primary-light-9: #fff4eb;
   --el-color-primary-dark-2: #cc5510;
+}
+
+/* Animated gradient background */
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(232, 101, 15, 0.12), transparent),
+    radial-gradient(ellipse 60% 50% at 90% 30%, rgba(99, 102, 241, 0.10), transparent),
+    radial-gradient(ellipse 50% 60% at 50% 80%, rgba(236, 72, 153, 0.08), transparent),
+    linear-gradient(135deg, #f8f9ff, #f0f2f5 50%, #fef5f0);
+  content: "";
+  pointer-events: none;
 }
 
 * {
@@ -83,8 +101,10 @@ textarea {
 
 .surface {
   background: var(--tc-panel);
-  border-radius: 12px;
-  box-shadow: var(--tc-shadow-sm);
+  border-radius: 16px;
+  box-shadow: var(--tc-shadow-sm), var(--tc-shadow-glow);
+  backdrop-filter: var(--tc-glass-blur);
+  -webkit-backdrop-filter: var(--tc-glass-blur);
 }
 
 .page-grid {
@@ -173,7 +193,54 @@ textarea {
 .el-input__wrapper,
 .el-textarea__inner,
 .el-select__wrapper {
-  border-radius: 4px;
+  border-radius: 24px;
+  box-shadow: none !important;
+  transition: all var(--tc-duration) var(--tc-ease);
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: none !important;
+}
+
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focus {
+  box-shadow: 0 0 0 1.5px var(--tc-brand) inset !important;
+  background: #ffffff;
+}
+
+.el-input__wrapper {
+  background: rgba(0, 0, 0, 0.04);
+  backdrop-filter: none;
+}
+
+.el-input__inner:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.el-input__inner::placeholder {
+  color: var(--tc-text-muted);
+  opacity: 0.7;
+}
+
+.el-input--large .el-input__wrapper {
+  border-radius: 24px;
+  padding: 4px 18px;
+}
+
+.el-input--large .el-input__inner {
+  font-size: 15px;
+}
+
+/* Auth form input labels */
+.el-form-item__label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--tc-text-strong);
+  padding-bottom: 4px;
 }
 
 .el-skeleton {

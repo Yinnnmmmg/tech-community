@@ -16,6 +16,8 @@ public class UserProfileVO implements Serializable {
     private Long articleCount;
     private Long followCount;
     private Long fanCount;
+    private Long collectionCount;
+    private Long likeCount;
     private Boolean followed;
     private Boolean self;
     private String createTime;

@@ -263,12 +263,21 @@ function compactNumber(value: number) {
   gap: 20px;
 }
 
+.home-nav__search :deep(.el-input__inner:focus) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .home-nav {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 16px;
   align-items: center;
   padding: 12px 16px;
+  background: var(--tc-panel);
+  backdrop-filter: var(--tc-glass-blur);
+  -webkit-backdrop-filter: var(--tc-glass-blur);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .home-nav__categories {
@@ -323,9 +332,11 @@ function compactNumber(value: number) {
 .recommend__hero,
 .recommend__item {
   overflow: hidden;
-  border-radius: 6px;
-  background: #ffffff;
-  box-shadow: var(--tc-shadow-sm);
+  border-radius: 16px;
+  background: var(--tc-panel);
+  backdrop-filter: var(--tc-glass-blur);
+  -webkit-backdrop-filter: var(--tc-glass-blur);
+  box-shadow: var(--tc-shadow-sm), var(--tc-shadow-glow);
   transition:
     transform var(--tc-duration) var(--tc-ease),
     box-shadow var(--tc-duration) var(--tc-ease);
@@ -365,8 +376,8 @@ function compactNumber(value: number) {
   place-items: center;
   gap: 8px;
   background:
-    radial-gradient(circle at 30% 20%, rgba(255, 135, 33, 0.36), transparent 32%),
-    linear-gradient(135deg, #24292f, #384150 58%, #ff6900);
+    radial-gradient(circle at 30% 20%, rgba(255, 135, 33, 0.30), transparent 32%),
+    linear-gradient(135deg, #1a1d23, #2d3548 58%, #e8650f);
   font-size: 18px;
   font-weight: 700;
 }
@@ -451,7 +462,7 @@ function compactNumber(value: number) {
 .recommend__item-mark {
   display: grid;
   place-items: center;
-  background: #eef1f5;
+  background: rgba(232, 101, 15, 0.08);
   color: var(--tc-brand);
   font-size: 26px;
   font-weight: 800;
@@ -529,9 +540,11 @@ function compactNumber(value: number) {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border-radius: 6px;
-  background: #ffffff;
-  box-shadow: var(--tc-shadow-xs);
+  border-radius: 16px;
+  background: var(--tc-panel);
+  backdrop-filter: var(--tc-glass-blur);
+  -webkit-backdrop-filter: var(--tc-glass-blur);
+  box-shadow: var(--tc-shadow-xs), var(--tc-shadow-glow);
 }
 
 .sidebar-card__title {
@@ -552,8 +565,8 @@ function compactNumber(value: number) {
 
 .notice-card {
   background:
-    linear-gradient(135deg, rgba(255, 105, 0, 0.1), rgba(255, 255, 255, 0) 62%),
-    #ffffff;
+    linear-gradient(135deg, rgba(232, 101, 15, 0.10), rgba(255, 255, 255, 0) 62%),
+    var(--tc-panel);
 }
 
 .sidebar-card p,
@@ -579,25 +592,28 @@ function compactNumber(value: number) {
 .hot-list__item span {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  background: #ccd1da;
-  color: #ffffff;
-  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--tc-text-muted);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .hot-list__item:nth-child(1) span {
-  background: var(--tc-brand-red);
+  background: rgba(230, 81, 81, 0.15);
+  color: var(--tc-brand-red);
 }
 
 .hot-list__item:nth-child(2) span {
-  background: var(--tc-brand);
+  background: rgba(232, 101, 15, 0.12);
+  color: var(--tc-brand);
 }
 
 .hot-list__item:nth-child(3) span {
-  background: #f59e2f;
+  background: rgba(245, 158, 47, 0.15);
+  color: #c4881f;
 }
 
 .hot-list__item strong {
@@ -626,10 +642,11 @@ function compactNumber(value: number) {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #24292f, var(--tc-brand));
+  background: linear-gradient(135deg, #2d3548, var(--tc-brand));
   color: #ffffff;
   font-size: 26px;
   font-weight: 800;
+  box-shadow: 0 4px 16px rgba(232, 101, 15, 0.2);
 }
 
 .stats-grid {
@@ -642,8 +659,9 @@ function compactNumber(value: number) {
   display: grid;
   gap: 4px;
   padding: 12px;
-  border-radius: 4px;
-  background: #f5f7fa;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(4px);
   transition: background var(--tc-duration) var(--tc-ease);
 }
 
