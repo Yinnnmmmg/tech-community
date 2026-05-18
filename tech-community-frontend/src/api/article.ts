@@ -93,13 +93,21 @@ export function deleteArticle(articleId: number) {
   })
 }
 
-export function uploadAttachment(file: File) {
+export function uploadAttachment(file: File, onUploadProgress?: (progress: number) => void) {
   const formData = new FormData()
   formData.append('file', file)
+  const timeout = Math.min(180000, Math.max(30000, (file.size / 1024) * 150))
   return request<ArticleAttachment>({
     url: '/article/attachment/upload',
     method: 'post',
     data: formData,
-    timeout: 60000
+    timeout,
+    onUploadProgress: onUploadProgress
+      ? (event) => {
+          if (event.total) {
+            onUploadProgress(Math.round((event.loaded / event.total) * 100))
+          }
+        }
+      : undefined
   }).then(normalizeAttachment)
 }

@@ -1,12 +1,33 @@
 <script setup lang="ts">
 import { Bell, Bot, CircleUserRound, Home, LogIn, LogOut, PenLine } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 
 import { useAuthStore } from '@/stores/authStore'
+import { useNotifyStore } from '@/stores/notifyStore'
 
 const authStore = useAuthStore()
+const notifyStore = useNotifyStore()
 const router = useRouter()
+const route = useRoute()
+
+onMounted(() => {
+  if (authStore.isAuthenticated) {
+    notifyStore.fetchUnreadCount()
+    notifyStore.startPolling()
+  }
+})
+
+onUnmounted(() => {
+  notifyStore.stopPolling()
+})
+
+// 仅在进出通知页面时刷新未读数，避免每次路由切换都发请求
+watch(() => route.name, (to, from) => {
+  if (from === 'notifications' || to === 'notifications') {
+    notifyStore.fetchUnreadCount()
+  }
+})
 
 const profileRoute = computed(() => {
   if (!authStore.user) {
@@ -36,14 +57,17 @@ async function handleLogout() {
         </RouterLink>
         <RouterLink :to="{ name: 'ai-chat' }" class="nav__item">
           <Bot :size="17" />
-          <span>AI</span>
+          <span>AI 助手</span>
         </RouterLink>
         <RouterLink :to="profileRoute" class="nav__item">
           <CircleUserRound :size="17" />
           <span>个人主页</span>
         </RouterLink>
-        <RouterLink :to="{ name: 'notifications' }" class="nav__item">
-          <Bell :size="17" />
+        <RouterLink :to="{ name: 'notifications' }" class="nav__item" @click="notifyStore.markSystemAsRead()">
+          <span class="nav__icon-wrap">
+            <Bell :size="17" />
+            <span v-if="notifyStore.unreadCount > 0" class="nav__badge">{{ notifyStore.unreadCount > 99 ? '99+' : notifyStore.unreadCount }}</span>
+          </span>
           <span>通知</span>
         </RouterLink>
       </nav>
@@ -56,8 +80,9 @@ async function handleLogout() {
           </el-button>
         </RouterLink>
         <template v-if="authStore.isAuthenticated">
-          <RouterLink :to="profileRoute" class="account__name">
-            {{ authStore.user?.username || '当前用户' }}
+          <RouterLink :to="profileRoute" class="account__avatar" :title="authStore.user?.username || '当前用户'">
+            <img v-if="authStore.user?.photo" :src="authStore.user.photo" alt="" />
+            <span v-else>{{ (authStore.user?.username || 'U').slice(0, 1) }}</span>
           </RouterLink>
           <el-button class="icon-button ghost-button" @click="handleLogout">
             <LogOut :size="16" />
@@ -80,11 +105,11 @@ async function handleLogout() {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  background: rgba(255, 248, 245, 0.72);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  border-bottom: 1px solid rgba(232, 101, 15, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .topbar__inner {
@@ -167,6 +192,43 @@ async function handleLogout() {
   width: calc(100% - 24px);
 }
 
+.nav__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  animation: badge-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  80% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.nav__icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .account {
   display: flex;
   align-items: center;
@@ -174,18 +236,29 @@ async function handleLogout() {
   gap: 10px;
 }
 
-.account__name {
-  max-width: 116px;
+.account__avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   overflow: hidden;
-  color: var(--tc-text-muted);
+  border-radius: 50%;
+  background: var(--tc-brand-soft);
+  color: var(--tc-brand);
   font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color var(--tc-duration) var(--tc-ease);
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: box-shadow var(--tc-duration) var(--tc-ease);
 }
 
-.account__name:hover {
-  color: var(--tc-brand);
+.account__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account__avatar:hover {
+  box-shadow: 0 0 0 2px var(--tc-brand);
 }
 
 .write-button {
@@ -237,8 +310,7 @@ async function handleLogout() {
 }
 
 @media (max-width: 560px) {
-  .brand__name,
-  .account__name {
+  .brand__name {
     display: none;
   }
 

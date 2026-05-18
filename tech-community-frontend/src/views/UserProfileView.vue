@@ -98,8 +98,8 @@ const visibleTabs = computed(() => {
     { key: 'articles', label: (isSelf.value ? '我的文章' : 'TA 的文章') + (profile.value ? ` (${profile.value.articleCount})` : '') }
   ]
   if (isSelf.value) {
-    tabs.push({ key: 'collections', label: '我的收藏' })
-    tabs.push({ key: 'likes', label: '我的点赞' })
+    tabs.push({ key: 'collections', label: '我的收藏' + (profile.value ? ` (${profile.value.collectionCount})` : '') })
+    tabs.push({ key: 'likes', label: '我的点赞' + (profile.value ? ` (${profile.value.likeCount})` : '') })
   }
   tabs.push({ key: 'follows', label: '关注' + (profile.value ? ` (${profile.value.followCount})` : '') })
   tabs.push({ key: 'fans', label: '粉丝' + (profile.value ? ` (${profile.value.fanCount})` : '') })

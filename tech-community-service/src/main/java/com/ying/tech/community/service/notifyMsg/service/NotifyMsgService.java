@@ -15,4 +15,14 @@ public interface NotifyMsgService {
      * 获取当前用户的关注通知消息。
      */
     List<String> getMyFollowNotify();
+
+    /**
+     * 获取当前用户未读系统通知数量。
+     */
+    long getSystemUnreadCount();
+
+    /**
+     * 将当前用户所有未读系统通知标记为已读。
+     */
+    void markSystemAsRead();
 }

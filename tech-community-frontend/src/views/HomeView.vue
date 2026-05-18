@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, Flame, MessageCircle, PenLine, Search, Sparkles } from 'lucide-vue-next'
+import { Bell, Flame, PenLine, Search, Sparkles, Star, Trophy } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -9,10 +9,7 @@ import type { ArticleCategory, ArticleListItem } from '@/api/types'
 import ArticleCard from '@/components/ArticleCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
-import { useAuthStore } from '@/stores/authStore'
-
 const router = useRouter()
-const authStore = useAuthStore()
 
 const articles = ref<ArticleListItem[]>([])
 const categories = ref<ArticleCategory[]>([])
@@ -27,6 +24,26 @@ const hotArticles = computed(() =>
     .sort((left, right) => hotScore(right) - hotScore(left))
     .slice(0, 6)
 )
+
+const topAuthors = computed(() => {
+  const authorMap = new Map<string, { authorId: string; authorName: string; totalScore: number }>()
+  for (const article of articles.value) {
+    const key = article.authorId || article.authorName || 'unknown'
+    const existing = authorMap.get(key)
+    if (existing) {
+      existing.totalScore += article.likeCount + article.commentCount + article.collectionCount
+    } else {
+      authorMap.set(key, {
+        authorId: article.authorId || '',
+        authorName: article.authorName || '社区作者',
+        totalScore: article.likeCount + article.commentCount + article.collectionCount
+      })
+    }
+  }
+  return [...authorMap.values()]
+    .sort((a, b) => b.totalScore - a.totalScore)
+    .slice(0, 6)
+})
 
 onMounted(() => {
   loadFirstPage()
@@ -89,12 +106,6 @@ function hotScore(article: ArticleListItem) {
   return article.likeCount * 3 + article.collectionCount * 2 + article.commentCount
 }
 
-function compactNumber(value: number) {
-  if (value >= 10000) {
-    return `${(value / 10000).toFixed(1)}w`
-  }
-  return String(value)
-}
 </script>
 
 <template>
@@ -123,36 +134,43 @@ function compactNumber(value: number) {
     </section>
 
     <section v-if="featuredArticles.length" class="recommend">
-      <RouterLink
-        class="recommend__hero"
-        :to="{ name: 'article-detail', params: { id: featuredArticles[0].articleId } }"
-      >
-        <img v-if="featuredArticles[0].coverUrl" :src="featuredArticles[0].coverUrl" alt="" />
-        <div v-else class="recommend__fallback">
-          <Sparkles :size="34" />
-          <span>精选文章</span>
-        </div>
-        <div class="recommend__hero-body">
-          <span class="recommend__tag">社区推荐</span>
-          <h2>{{ featuredArticles[0].title }}</h2>
-          <p>{{ featuredArticles[0].summary || '来自社区的最新技术分享' }}</p>
-        </div>
-      </RouterLink>
+      <div class="recommend__header">
+        <Star :size="18" />
+        <h2>社区推荐</h2>
+      </div>
 
-      <div class="recommend__list">
+      <div class="recommend__body">
         <RouterLink
-          v-for="item in featuredArticles.slice(1)"
-          :key="item.articleId"
-          class="recommend__item"
-          :to="{ name: 'article-detail', params: { id: item.articleId } }"
+          class="recommend__hero"
+          :to="{ name: 'article-detail', params: { id: featuredArticles[0].articleId } }"
         >
-          <img v-if="item.coverUrl" :src="item.coverUrl" alt="" />
-          <span v-else class="recommend__item-mark">{{ item.title.slice(0, 1) }}</span>
-          <div>
-            <h3>{{ item.title }}</h3>
-            <p>{{ item.authorName || '社区作者' }} · {{ item.createTime || '刚刚' }}</p>
+          <img v-if="featuredArticles[0].coverUrl" :src="featuredArticles[0].coverUrl" alt="" />
+          <div v-else class="recommend__fallback">
+            <Sparkles :size="34" />
+            <span>精选文章</span>
+          </div>
+          <div class="recommend__hero-body">
+            <span class="recommend__tag">编辑推荐</span>
+            <h2>{{ featuredArticles[0].title }}</h2>
+            <p>{{ featuredArticles[0].summary || '来自社区的最新技术分享' }}</p>
           </div>
         </RouterLink>
+
+        <div class="recommend__list">
+          <RouterLink
+            v-for="item in featuredArticles.slice(1)"
+            :key="item.articleId"
+            class="recommend__item"
+            :to="{ name: 'article-detail', params: { id: item.articleId } }"
+          >
+            <img v-if="item.coverUrl" :src="item.coverUrl" alt="" />
+            <span v-else class="recommend__item-mark">{{ item.title.slice(0, 1) }}</span>
+            <div>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.authorName || '社区作者' }} · {{ item.createTime || '刚刚' }}</p>
+            </div>
+          </RouterLink>
+        </div>
       </div>
     </section>
 
@@ -200,7 +218,7 @@ function compactNumber(value: number) {
         <section class="sidebar-card">
           <div class="sidebar-card__title">
             <Flame :size="18" />
-            <h2>热门文章</h2>
+            <h2>文章榜</h2>
           </div>
           <div v-if="hotArticles.length" class="hot-list">
             <RouterLink
@@ -216,41 +234,22 @@ function compactNumber(value: number) {
           <p v-else class="sidebar-muted">暂无热门内容</p>
         </section>
 
-        <section class="sidebar-card profile-card">
-          <div class="profile-card__avatar">{{ (authStore.user?.username || 'T').slice(0, 1) }}</div>
-          <h2>{{ authStore.user?.username || '游客' }}</h2>
-          <p>{{ authStore.isAuthenticated ? '继续记录你的技术思考。' : '登录后可发布、评论、点赞和收藏。' }}</p>
-          <RouterLink :to="authStore.isAuthenticated ? { name: 'article-new' } : { name: 'login' }">
-            <el-button type="primary" class="icon-button">
-              <PenLine :size="16" />
-              <span>{{ authStore.isAuthenticated ? '去创作' : '去登录' }}</span>
-            </el-button>
-          </RouterLink>
-        </section>
-
         <section class="sidebar-card">
           <div class="sidebar-card__title">
-            <MessageCircle :size="18" />
-            <h2>社区数据</h2>
+            <Trophy :size="18" />
+            <h2>作者榜</h2>
           </div>
-          <div class="stats-grid">
-            <div>
-              <strong>{{ compactNumber(articles.length) }}</strong>
-              <span>本页文章</span>
-            </div>
-            <div>
-              <strong>{{ compactNumber(articles.reduce((sum, item) => sum + item.commentCount, 0)) }}</strong>
-              <span>评论</span>
-            </div>
-            <div>
-              <strong>{{ compactNumber(articles.reduce((sum, item) => sum + item.likeCount, 0)) }}</strong>
-              <span>点赞</span>
-            </div>
-            <div>
-              <strong>{{ compactNumber(articles.reduce((sum, item) => sum + item.collectionCount, 0)) }}</strong>
-              <span>收藏</span>
+          <div v-if="topAuthors.length" class="hot-list">
+            <div
+              v-for="(author, index) in topAuthors"
+              :key="author.authorId || index"
+              class="hot-list__item"
+            >
+              <span>{{ index + 1 }}</span>
+              <strong>{{ author.authorName }}</strong>
             </div>
           </div>
+          <p v-else class="sidebar-muted">暂无作者数据</p>
         </section>
       </aside>
     </div>
@@ -325,6 +324,32 @@ function compactNumber(value: number) {
 
 .recommend {
   display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse 600px 240px at 0% 30%, rgba(232, 101, 15, 0.10), transparent),
+    radial-gradient(ellipse 360px 200px at 80% 80%, rgba(232, 101, 15, 0.06), transparent),
+    linear-gradient(135deg, rgba(255, 244, 237, 0.5), rgba(255, 248, 245, 0.3));
+}
+
+.recommend__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tc-brand);
+}
+
+.recommend__header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--tc-text-strong);
+}
+
+.recommend__body {
+  display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
   gap: 18px;
 }
@@ -333,10 +358,8 @@ function compactNumber(value: number) {
 .recommend__item {
   overflow: hidden;
   border-radius: 16px;
-  background: var(--tc-panel);
-  backdrop-filter: var(--tc-glass-blur);
-  -webkit-backdrop-filter: var(--tc-glass-blur);
-  box-shadow: var(--tc-shadow-sm), var(--tc-shadow-glow);
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
   transition:
     transform var(--tc-duration) var(--tc-ease),
     box-shadow var(--tc-duration) var(--tc-ease);
@@ -344,12 +367,12 @@ function compactNumber(value: number) {
 
 .recommend__hero:hover {
   transform: translateY(-2px);
-  box-shadow: var(--tc-shadow-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
 }
 
 .recommend__item:hover {
   transform: translateY(-1px);
-  box-shadow: var(--tc-shadow-md);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
 }
 
 .recommend__hero {
@@ -532,8 +555,13 @@ function compactNumber(value: number) {
 }
 
 .home-sidebar {
+  position: sticky;
+  top: 80px;
   display: grid;
   gap: 16px;
+  align-content: start;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
 }
 
 .sidebar-card {
@@ -554,8 +582,7 @@ function compactNumber(value: number) {
   color: var(--tc-brand);
 }
 
-.sidebar-card__title h2,
-.profile-card h2 {
+.sidebar-card__title h2 {
   margin: 0;
   color: var(--tc-text-strong);
   font-size: 17px;
@@ -631,59 +658,15 @@ function compactNumber(value: number) {
   color: var(--tc-brand);
 }
 
-.profile-card {
-  justify-items: center;
-  text-align: center;
-}
-
-.profile-card__avatar {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2d3548, var(--tc-brand));
-  color: #ffffff;
-  font-size: 26px;
-  font-weight: 800;
-  box-shadow: 0 4px 16px rgba(232, 101, 15, 0.2);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.stats-grid div {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(4px);
-  transition: background var(--tc-duration) var(--tc-ease);
-}
-
-.stats-grid div:hover {
-  background: var(--tc-brand-soft);
-}
-
-.stats-grid strong {
-  color: var(--tc-text-strong);
-  font-size: 19px;
-}
-
-.stats-grid span {
-  color: var(--tc-text-muted);
-  font-size: 12px;
-}
-
 @media (max-width: 980px) {
   .home-nav,
-  .recommend,
+  .recommend__body,
   .home-layout {
     grid-template-columns: 1fr;
+  }
+
+  .recommend {
+    padding: 20px 16px;
   }
 
   .home-sidebar {
