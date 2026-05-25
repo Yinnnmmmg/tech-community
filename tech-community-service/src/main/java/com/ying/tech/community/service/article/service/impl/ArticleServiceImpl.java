@@ -127,21 +127,25 @@ public class ArticleServiceImpl implements ArticleService {
     @Transactional(rollbackFor = Exception.class)
     @Override
     public Long publishArticle(ArticlePostReq articlePostReq) {
+        // 1. 获取当前登录用户，校验分类是否存在
         Long userId = ReqInfoContext.getReqInfo().getUserId();
         log.info("publish article, userId={}", userId);
         validateCategory(articlePostReq.getCategoryId());
 
+        // 2. 构建文章主表记录，状态设为待审核，插入数据库
         ArticleDO article = new ArticleDO();
         BeanUtil.copyProperties(articlePostReq, article);
         article.setUserId(userId);
         article.setStatus(PublishStatusConstants.PENDING);
         articleMapper.insert(article);
 
+        // 3. 构建文章详情记录（正文内容单独存详情表），插入数据库
         ArticleDetailDO articleDetail = new ArticleDetailDO();
         articleDetail.setArticleId(article.getId());
         articleDetail.setContent(articlePostReq.getContent());
         articleDetailMapper.insert(articleDetail);
 
+        // 4. 绑定附件到文章，并尝试从附件中解析封面图
         List<ArticleAttachmentDO> boundAttachments = articleAttachmentService.bindAttachmentsToArticle(
                 article.getId(),
                 userId,
@@ -153,10 +157,12 @@ public class ArticleServiceImpl implements ArticleService {
             articleMapper.updateById(article);
         }
 
+        // 5. 事务提交后异步发送文章审核消息到 MQ
         long currentTime = System.currentTimeMillis();
         ArticlePublishMessage message = new ArticlePublishMessage(article.getId(), userId, currentTime);
         registerAfterCommit(() -> sendPublishMessage(article.getId(), message));
 
+        // 6. 返回新文章 ID
         return article.getId();
     }
 

@@ -562,6 +562,12 @@ function hotScore(article: ArticleListItem) {
   align-content: start;
   max-height: calc(100vh - 96px);
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.home-sidebar::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-card {
