@@ -200,64 +200,67 @@ function ensureLogin() {
     </main>
 
     <aside class="detail-side">
-      <section class="side-card stats-card">
-        <h2 class="side-card-title">文章数据</h2>
-        <div class="detail-stats">
-          <div class="stat-item">
-            <div class="stat-icon stat-like">
-              <Heart :size="18" />
+      <div class="detail-side__inner">
+        <section class="side-card stats-card">
+          <h2 class="side-card-title">文章数据</h2>
+          <div class="detail-stats">
+            <div class="stat-item">
+              <div class="stat-icon stat-like">
+                <Heart :size="18" />
+              </div>
+              <strong>{{ article.likeCount || 0 }}</strong>
+              <span>点赞</span>
             </div>
-            <strong>{{ article.likeCount || 0 }}</strong>
-            <span>点赞</span>
-          </div>
-          <div class="stat-item">
-            <div class="stat-icon stat-collect">
-              <Bookmark :size="18" />
+            <div class="stat-item">
+              <div class="stat-icon stat-collect">
+                <Bookmark :size="18" />
+              </div>
+              <strong>{{ article.collectionCount || 0 }}</strong>
+              <span>收藏</span>
             </div>
-            <strong>{{ article.collectionCount || 0 }}</strong>
-            <span>收藏</span>
-          </div>
-          <div class="stat-item">
-            <div class="stat-icon stat-comment">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <div class="stat-item">
+              <div class="stat-icon stat-comment">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <strong>{{ article.commentCount || 0 }}</strong>
+              <span>评论</span>
             </div>
-            <strong>{{ article.commentCount || 0 }}</strong>
-            <span>评论</span>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="side-card author-side-card">
-        <h2 class="side-card-title">关于作者</h2>
-        <RouterLink
-          v-if="article.authorId"
-          class="author-card"
-          :to="{ name: 'user-profile', params: { userId: article.authorId } }"
-        >
-          <span class="author-avatar">{{ (article.authorName || 'U').slice(0, 1) }}</span>
-          <div class="author-info">
-            <strong>{{ article.authorName || '匿名作者' }}</strong>
-            <span class="author-hint">查看作者主页 →</span>
+        <section class="side-card author-side-card">
+          <h2 class="side-card-title">关于作者</h2>
+          <RouterLink
+            v-if="article.authorId"
+            class="author-card"
+            :to="{ name: 'user-profile', params: { userId: article.authorId } }"
+          >
+            <span class="author-avatar">{{ (article.authorName || 'U').slice(0, 1) }}</span>
+            <div class="author-info">
+              <strong>{{ article.authorName || '匿名作者' }}</strong>
+              <span class="author-hint">查看作者主页 →</span>
+            </div>
+          </RouterLink>
+          <div v-else class="author-card">
+            <span class="author-avatar">{{ (article.authorName || 'U').slice(0, 1) }}</span>
+            <div class="author-info">
+              <strong>{{ article.authorName || '匿名作者' }}</strong>
+            </div>
           </div>
-        </RouterLink>
-        <div v-else class="author-card">
-          <span class="author-avatar">{{ (article.authorName || 'U').slice(0, 1) }}</span>
-          <div class="author-info">
-            <strong>{{ article.authorName || '匿名作者' }}</strong>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="side-card ad-card">
-        <div class="ad-placeholder">
-          <div class="ad-label">广告</div>
-          <div class="ad-content">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-            <p>广告位招租</p>
-            <span>如需投放广告请联系管理员</span>
+        <section class="side-card ad-card">
+          <div class="ad-placeholder">
+            <div class="ad-label">广告</div>
+            <div class="ad-content">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+              <p>广告位招租</p>
+              <span>如需投放广告请联系管理员</span>
+              <span>QQ：3221388136</span>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </aside>
   </div>
 </template>
@@ -266,7 +269,7 @@ function ensureLogin() {
 /* ========== Layout ========== */
 .detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 24px;
   align-items: start;
 }
@@ -521,12 +524,39 @@ function ensureLogin() {
 .detail-side {
   position: sticky;
   top: 84px;
-  display: grid;
+}
+
+.detail-side__inner {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
+  max-height: calc(100vh - 84px - 24px);
+  overflow-y: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+
+.detail-side__inner::-webkit-scrollbar {
+  width: 5px;
+}
+
+.detail-side__inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.detail-side__inner::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+
+.detail-side__inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.30);
 }
 
 .side-card {
   display: grid;
+  flex-shrink: 0;
   gap: 16px;
   padding: 20px;
   border-radius: 12px;

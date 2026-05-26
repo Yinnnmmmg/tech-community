@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Bot, Copy, Plus, Send, Sparkles, StopCircle, UserRound } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 
 import { streamChat } from '@/api/ai'
 import type { Reference } from '@/api/types'
@@ -11,6 +11,7 @@ import { renderMarkdown } from '@/utils/markdown'
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  displayedContent?: string
   references?: Reference[]
   timestamp: number
 }
@@ -22,13 +23,34 @@ const suggestedQuestions = [
   'AI 领域的核心技术有哪些？',
 ]
 
+const STORAGE_KEY = 'tech-community-ai-messages'
+
+function loadMessages(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as ChatMessage[]
+      return parsed.map((m) => ({ ...m, displayedContent: m.content }))
+    }
+  } catch { /* corrupted data, ignore */ }
+  return []
+}
+
 const question = ref('')
 const sending = ref(false)
-const messages = ref<ChatMessage[]>([])
+const messages = ref<ChatMessage[]>(loadMessages())
 const controller = ref<AbortController | null>(null)
+const typewriterTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const TYPING_NORMAL_MS = 30
+const TYPING_FAST_MS = 8
 const sessionId = computed(() => getSessionId())
 const messagesContainer = ref<HTMLElement | null>(null)
 const showScrollButton = ref(false)
+
+function getLastAiMessage(): ChatMessage | undefined {
+  const last = messages.value[messages.value.length - 1]
+  return last?.role === 'assistant' ? last : undefined
+}
 
 async function sendQuestion() {
   const text = question.value.trim()
@@ -38,8 +60,7 @@ async function sendQuestion() {
 
   question.value = ''
   messages.value.push({ role: 'user', content: text, timestamp: Date.now() })
-  const assistantMessage: ChatMessage = { role: 'assistant', content: '', timestamp: Date.now() }
-  messages.value.push(assistantMessage)
+  messages.value.push({ role: 'assistant', content: '', displayedContent: undefined, timestamp: Date.now() })
 
   controller.value = new AbortController()
   sending.value = true
@@ -50,17 +71,21 @@ async function sendQuestion() {
         if (chunk.errorCode) {
           throw new Error(chunk.errorMessage || 'AI 返回异常')
         }
+        const last = getLastAiMessage()
+        if (!last) return
         if (chunk.content) {
-          assistantMessage.content += chunk.content
-          assistantMessage.timestamp = Date.now()
+          last.content += chunk.content
+          last.timestamp = Date.now()
+          startTypewriter()
         }
         if (chunk.references?.length) {
-          assistantMessage.references = chunk.references
+          last.references = chunk.references
         }
       },
       controller.value.signal
     )
   } catch (error) {
+    stopTypewriter(true)
     if ((error as Error).name !== 'AbortError') {
       ElMessage.error(error instanceof Error ? error.message : 'AI 对话失败')
     }
@@ -71,11 +96,62 @@ async function sendQuestion() {
 }
 
 function stopStream() {
+  const last = getLastAiMessage()
+  if (last) {
+    last.displayedContent = last.content
+  }
+  if (typewriterTimer.value) {
+    clearTimeout(typewriterTimer.value)
+    typewriterTimer.value = null
+  }
   controller.value?.abort()
+}
+
+function startTypewriter() {
+  if (typewriterTimer.value) return
+  typewriterTick()
+}
+
+function typewriterTick() {
+  const last = getLastAiMessage()
+  if (!last) {
+    typewriterTimer.value = null
+    return
+  }
+  const displayed = last.displayedContent ?? ''
+  if (displayed.length >= last.content.length) {
+    typewriterTimer.value = null
+    return
+  }
+  const speed = sending.value ? TYPING_NORMAL_MS : TYPING_FAST_MS
+  last.displayedContent = last.content.slice(0, displayed.length + 1)
+  typewriterTimer.value = setTimeout(() => typewriterTick(), speed)
+}
+
+function stopTypewriter(flush = false) {
+  if (typewriterTimer.value) {
+    clearTimeout(typewriterTimer.value)
+    typewriterTimer.value = null
+  }
+  if (flush) {
+    const last = getLastAiMessage()
+    if (last) {
+      last.displayedContent = last.content
+    }
+  }
+}
+
+function isTypewriterActiveFor(index: number): boolean {
+  if (index !== messages.value.length - 1) return false
+  const last = messages.value[messages.value.length - 1]
+  if (!last || last.role !== 'assistant') return false
+  const displayed = last.displayedContent ?? ''
+  return displayed.length < last.content.length
 }
 
 function clearMessages() {
   messages.value = []
+  localStorage.removeItem(STORAGE_KEY)
 }
 
 async function scrollToBottom(smooth = true) {
@@ -110,10 +186,23 @@ watch(
 watch(
   () => {
     const last = messages.value[messages.value.length - 1]
-    return last?.content ?? ''
+    return last ? (last.displayedContent ?? last.content) : ''
   },
   () => scrollToBottom(false)
 )
+
+watch(
+  messages,
+  (val) => {
+    const slim = val.map(({ displayedContent: _, ...rest }) => rest)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(slim))
+  },
+  { deep: true }
+)
+
+onUnmounted(() => {
+  stopTypewriter()
+})
 
 function getSessionId() {
   const key = 'tech-community-ai-session'
@@ -206,7 +295,7 @@ function getSessionId() {
               </button>
               <!-- Stream loading dots -->
               <div
-                v-if="!message.content && sending && index === messages.length - 1"
+                v-if="(!message.displayedContent || message.displayedContent.length === 0) && sending && index === messages.length - 1"
                 class="chat-message__typing"
               >
                 <span class="typing-dot" />
@@ -217,7 +306,12 @@ function getSessionId() {
               <div
                 v-else
                 class="chat-message__markdown"
-                v-html="renderMarkdown(message.content)"
+                v-html="renderMarkdown(message.displayedContent ?? message.content)"
+              />
+              <!-- Typewriter cursor -->
+              <span
+                v-if="isTypewriterActiveFor(index)"
+                class="typewriter-cursor"
               />
               <span class="chat-message__time">{{ formatTime(message.timestamp) }}</span>
             </div>
@@ -524,6 +618,22 @@ function getSessionId() {
 @keyframes typing-bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Typewriter cursor ── */
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 2px;
+  background: var(--tc-brand);
+  animation: cursor-blink 1s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 /* ── Markdown ── */

@@ -19,7 +19,7 @@ public interface ArticleService {
 
     void deleteArticleByAdmin(Long articleId);
 
-    CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize, Long categoryId);
+    CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize, Long categoryId, Boolean followedOnly);
 
     PageResult<ArticleListVO> getApprovedArticlesByUser(Long userId, Integer page, Integer size);
 

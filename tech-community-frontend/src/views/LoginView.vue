@@ -67,9 +67,11 @@ async function submit() {
 <style scoped>
 .auth-page {
   display: grid;
-  place-items: start center;
-  min-height: calc(100vh - 160px);
+  place-items: center;
+  min-height: 100vh;
+  min-width: 100vw;
   padding-top: 28px;
+  background: url('@/png/login-Background.png') center / cover no-repeat;
 }
 
 .auth-card {

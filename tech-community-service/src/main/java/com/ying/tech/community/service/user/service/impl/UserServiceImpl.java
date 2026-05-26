@@ -22,6 +22,7 @@ import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserRelationMapper;
+import com.ying.tech.community.service.user.req.ChangePasswordReq;
 import com.ying.tech.community.service.user.req.UserProfileUpdateReq;
 import com.ying.tech.community.service.user.req.UserSaveReq;
 import com.ying.tech.community.service.user.service.UserService;
@@ -238,6 +239,21 @@ public class UserServiceImpl implements UserService {
             return;
         }
         userInfoMapper.updateById(userInfo);
+    }
+
+    @Override
+    public void changePassword(Long userId, ChangePasswordReq req) {
+        if (!StringUtils.hasText(req.getOldPassword()) || !StringUtils.hasText(req.getNewPassword())) {
+            throw new RuntimeException("密码不能为空");
+        }
+        UserDO user = requireUser(userId);
+        String oldPwdEncoded = DigestUtils.md5DigestAsHex(req.getOldPassword().getBytes(StandardCharsets.UTF_8));
+        if (!oldPwdEncoded.equals(user.getPassword())) {
+            throw new BusinessException(StatusEnum.USER_PWD_ERROR);
+        }
+        String newPwdEncoded = DigestUtils.md5DigestAsHex(req.getNewPassword().getBytes(StandardCharsets.UTF_8));
+        user.setPassword(newPwdEncoded);
+        userMapper.updateById(user);
     }
 
     @Override

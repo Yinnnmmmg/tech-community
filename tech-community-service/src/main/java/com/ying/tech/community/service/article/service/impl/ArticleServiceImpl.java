@@ -32,11 +32,13 @@ import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.entity.UserInfoDO;
 import com.ying.tech.community.service.user.entity.UserFootDO;
+import com.ying.tech.community.service.user.entity.UserRelationDO;
 import com.ying.tech.community.service.user.message.RedisCollectToDBMessage;
 import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserRelationMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -92,6 +94,7 @@ public class ArticleServiceImpl implements ArticleService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final RabbitTemplate rabbitTemplate;
     private final Executor taskExecutor;
+    private final UserRelationMapper userRelationMapper;
 
     public ArticleServiceImpl(ArticleMapper articleMapper,
                               ArticleDetailMapper articleDetailMapper,
@@ -104,7 +107,8 @@ public class ArticleServiceImpl implements ArticleService {
                               ArticleESRepository articleESRepository,
                               RedisTemplate<String, Object> redisTemplate,
                               RabbitTemplate rabbitTemplate,
-                              Executor taskExecutor) {
+                              Executor taskExecutor,
+                              UserRelationMapper userRelationMapper) {
         this.articleMapper = articleMapper;
         this.articleDetailMapper = articleDetailMapper;
         this.userFootMapper = userFootMapper;
@@ -117,6 +121,7 @@ public class ArticleServiceImpl implements ArticleService {
         this.redisTemplate = redisTemplate;
         this.rabbitTemplate = rabbitTemplate;
         this.taskExecutor = taskExecutor;
+        this.userRelationMapper = userRelationMapper;
     }
 
     /**
@@ -159,7 +164,7 @@ public class ArticleServiceImpl implements ArticleService {
 
         // 5. 事务提交后异步发送文章审核消息到 MQ
         long currentTime = System.currentTimeMillis();
-        ArticlePublishMessage message = new ArticlePublishMessage(article.getId(), userId, currentTime);
+        ArticlePublishMessage message = new ArticlePublishMessage(article.getId(), userId, currentTime, null);
         registerAfterCommit(() -> sendPublishMessage(article.getId(), message));
 
         // 6. 返回新文章 ID
@@ -208,7 +213,7 @@ public class ArticleServiceImpl implements ArticleService {
         Long publishTime = article.getCreateTime() == null
                 ? System.currentTimeMillis()
                 : article.getCreateTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-        ArticlePublishMessage message = new ArticlePublishMessage(articleId, currentUserId, publishTime);
+        ArticlePublishMessage message = new ArticlePublishMessage(articleId, currentUserId, publishTime, null);
         registerAfterCommit(() -> {
             clearArticleReadSide(articleId);
             sendPublishMessage(articleId, message);
@@ -254,7 +259,11 @@ public class ArticleServiceImpl implements ArticleService {
      * 若时间轴缓存不存在或为空，则退化为数据库分页查询。
      */
     @Override
-    public CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize, Long categoryId) {
+    public CursorPageResult<ArticleListVO> getArticleList(Long cursor, Integer pageSize, Long categoryId, Boolean followedOnly) {
+        if (Boolean.TRUE.equals(followedOnly)) {
+            return getFollowedArticleList(cursor, pageSize);
+        }
+
         Long normalizedCursor = (cursor == null || cursor <= 1L) ? null : cursor;
         log.info("query article list, cursor={}, normalizedCursor={}, pageSize={}, categoryId={}",
                 cursor, normalizedCursor, pageSize, categoryId);
@@ -394,6 +403,54 @@ public class ArticleServiceImpl implements ArticleService {
 
         if (cursor != null && cursor > 0) {
             LocalDateTime cursorTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(cursor), ZoneId.systemDefault());
+            queryWrapper.lt("create_time", cursorTime);
+        }
+
+        List<ArticleDO> articleDOList = articleMapper.selectList(queryWrapper);
+        List<ArticleListVO> voList = enrichArticleList(articleDOList);
+
+        Long nextCursor = null;
+        if (!articleDOList.isEmpty()) {
+            LocalDateTime createTime = articleDOList.get(articleDOList.size() - 1).getCreateTime();
+            if (createTime != null) {
+                nextCursor = createTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            }
+        }
+        if (articleDOList.size() < pageSize) {
+            nextCursor = null;
+        }
+        return new CursorPageResult<>(nextCursor, voList);
+    }
+
+    /**
+     * 查询已关注用户的文章列表（数据库游标分页）。
+     */
+    private CursorPageResult<ArticleListVO> getFollowedArticleList(Long cursor, Integer pageSize) {
+        Long currentUserId = ReqInfoContext.getReqInfo().getUserId();
+
+        List<Long> followedUserIds = userRelationMapper.selectList(
+                new LambdaQueryWrapper<UserRelationDO>()
+                        .eq(UserRelationDO::getFollowUserId, currentUserId)
+                        .eq(UserRelationDO::getFollowState, 1))
+                .stream()
+                .map(UserRelationDO::getUserId)
+                .distinct()
+                .toList();
+
+        if (CollectionUtils.isEmpty(followedUserIds)) {
+            return new CursorPageResult<>(null, Collections.emptyList());
+        }
+
+        Long normalizedCursor = (cursor == null || cursor <= 1L) ? null : cursor;
+        QueryWrapper<ArticleDO> queryWrapper = new QueryWrapper<>();
+        queryWrapper.in("user_id", followedUserIds)
+                .eq("status", PublishStatusConstants.APPROVED)
+                .orderByDesc("create_time")
+                .last("LIMIT " + pageSize);
+
+        if (normalizedCursor != null && normalizedCursor > 0) {
+            LocalDateTime cursorTime = LocalDateTime.ofInstant(
+                    Instant.ofEpochMilli(normalizedCursor), ZoneId.systemDefault());
             queryWrapper.lt("create_time", cursorTime);
         }
 

@@ -89,8 +89,9 @@ public class ArticleController {
     @GetMapping("/list")
     public Result<CursorPageResult<ArticleListVO>> articleList(@RequestParam(defaultValue = "0") Long cursor,
                                                                @RequestParam(defaultValue = "10") Integer pageSize,
-                                                               @RequestParam(required = false) Long categoryId) {
-        CursorPageResult<ArticleListVO> articlesPageResult = articleService.getArticleList(cursor, pageSize, categoryId);
+                                                               @RequestParam(required = false) Long categoryId,
+                                                               @RequestParam(defaultValue = "false") Boolean followedOnly) {
+        CursorPageResult<ArticleListVO> articlesPageResult = articleService.getArticleList(cursor, pageSize, categoryId, followedOnly);
         return Result.success(articlesPageResult);
     }
 

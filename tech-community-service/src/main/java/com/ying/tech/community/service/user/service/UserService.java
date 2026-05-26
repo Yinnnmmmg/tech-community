@@ -3,6 +3,7 @@ package com.ying.tech.community.service.user.service;
 import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.user.entity.UserDO;
+import com.ying.tech.community.service.user.req.ChangePasswordReq;
 import com.ying.tech.community.service.user.req.UserProfileUpdateReq;
 import com.ying.tech.community.service.user.req.UserSaveReq;
 import com.ying.tech.community.service.user.vo.FollowActionVO;
@@ -25,6 +26,8 @@ public interface UserService {
     UserProfileVO getUserProfile(Long userId);
 
     void updateCurrentUserProfile(Long userId, UserProfileUpdateReq req);
+
+    void changePassword(Long userId, ChangePasswordReq req);
 
     PageResult<ArticleListVO> getUserArticlePage(Long userId, Integer page, Integer size);
 

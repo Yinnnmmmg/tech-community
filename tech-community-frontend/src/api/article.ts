@@ -20,11 +20,11 @@ function normalizeAttachment(attachment: ArticleAttachment): ArticleAttachment {
   }
 }
 
-export function listArticles(cursor = 0, pageSize = 10, categoryId?: number) {
+export function listArticles(cursor = 0, pageSize = 10, categoryId?: number, followedOnly = false) {
   return request<CursorPageResult<ArticleListItem>>({
     url: '/article/list',
     method: 'get',
-    params: { cursor, pageSize, categoryId }
+    params: { cursor, pageSize, categoryId, followedOnly }
   })
 }
 

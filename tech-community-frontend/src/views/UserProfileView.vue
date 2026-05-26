@@ -2,6 +2,7 @@
 import {
   CalendarDays,
   Edit3,
+  Lock,
   MapPin,
   UserMinus,
   UserPlus,
@@ -13,6 +14,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { getCurrentUser } from '@/api/auth'
 import {
+  changePassword,
   followUser,
   getFanList,
   getFollowList,
@@ -24,7 +26,7 @@ import {
   updateCurrentUserProfile
 } from '@/api/user'
 import { uploadAttachment } from '@/api/article'
-import type { ArticleListItem, UserFollowListItem, UserProfile, UserProfileUpdateReq } from '@/api/types'
+import type { ArticleListItem, ChangePasswordReq, UserFollowListItem, UserProfile, UserProfileUpdateReq } from '@/api/types'
 import ArticleCard from '@/components/ArticleCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -60,6 +62,14 @@ const editForm = reactive<UserProfileUpdateReq>({
   company: '',
   profile: ''
 })
+const pwdVisible = ref(false)
+const pwdActionLoading = ref(false)
+const pwdForm = reactive<ChangePasswordReq>({
+  oldPassword: '',
+  newPassword: ''
+})
+const pwdConfirm = ref('')
+
 const photoPreviewUrl = ref('')
 const photoUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -217,6 +227,43 @@ function openEditDialog() {
   editVisible.value = true
 }
 
+function openPasswordDialog() {
+  pwdForm.oldPassword = ''
+  pwdForm.newPassword = ''
+  pwdConfirm.value = ''
+  pwdVisible.value = true
+}
+
+async function submitPasswordChange() {
+  if (!pwdForm.oldPassword || !pwdForm.newPassword) {
+    ElMessage.error('请填写完整密码信息')
+    return
+  }
+  if (pwdForm.newPassword !== pwdConfirm.value) {
+    ElMessage.error('两次输入的新密码不一致')
+    return
+  }
+  if (pwdForm.oldPassword === pwdForm.newPassword) {
+    ElMessage.error('新密码不能与旧密码相同')
+    return
+  }
+  pwdActionLoading.value = true
+  try {
+    await changePassword({
+      oldPassword: pwdForm.oldPassword,
+      newPassword: pwdForm.newPassword
+    })
+    pwdVisible.value = false
+    ElMessage.success('密码修改成功，请重新登录')
+    authStore.logout()
+    router.push({ name: 'login' })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '密码修改失败')
+  } finally {
+    pwdActionLoading.value = false
+  }
+}
+
 async function saveProfile() {
   actionLoading.value = true
   try {
@@ -321,6 +368,10 @@ function handleEditPhotoError() {
       </div>
 
       <div class="profile-actions">
+        <el-button v-if="canEdit" class="icon-button" @click="openPasswordDialog">
+          <Lock :size="16" />
+          <span>修改密码</span>
+        </el-button>
         <el-button v-if="canEdit" type="primary" class="icon-button" @click="openEditDialog">
           <Edit3 :size="16" />
           <span>编辑资料</span>
@@ -448,6 +499,24 @@ function handleEditPhotoError() {
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="actionLoading" @click="saveProfile">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="pwdVisible" title="修改密码" width="440px">
+      <el-form label-position="top">
+        <el-form-item label="当前密码">
+          <el-input v-model="pwdForm.oldPassword" type="password" show-password maxlength="32" placeholder="输入当前密码" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdForm.newPassword" type="password" show-password maxlength="32" placeholder="输入新密码" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="pwdConfirm" type="password" show-password maxlength="32" placeholder="再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pwdVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pwdActionLoading" @click="submitPasswordChange">确认修改</el-button>
       </template>
     </el-dialog>
   </div>

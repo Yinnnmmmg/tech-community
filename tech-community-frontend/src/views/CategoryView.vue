@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Flame, FolderOpen, PenLine, Search } from 'lucide-vue-next'
+import { Flame, FolderOpen, Search } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -139,12 +139,6 @@ function hotScore(article: ArticleListItem) {
             <h1 class="page-title">{{ currentCategory?.name || '分类' }}</h1>
             <p>{{ currentCategory ? `浏览 ${currentCategory.name} 分类下的最新技术文章。` : '正在加载分类信息。' }}</p>
           </div>
-          <RouterLink :to="{ name: 'article-new' }" class="category-hero__action">
-            <el-button type="primary" class="icon-button">
-              <PenLine :size="16" />
-              <span>写文章</span>
-            </el-button>
-          </RouterLink>
         </div>
 
         <LoadingState v-if="loading" />
@@ -232,7 +226,7 @@ function hotScore(article: ArticleListItem) {
 
 .category-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 20px;
   align-items: start;
 }

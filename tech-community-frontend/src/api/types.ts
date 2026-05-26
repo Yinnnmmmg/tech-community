@@ -186,6 +186,11 @@ export interface UserProfileUpdateReq {
   profile?: string
 }
 
+export interface ChangePasswordReq {
+  oldPassword: string
+  newPassword: string
+}
+
 export interface Reference {
   articleId: number
   title: string

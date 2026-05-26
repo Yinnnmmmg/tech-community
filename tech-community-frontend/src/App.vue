@@ -7,10 +7,18 @@ import BackToTop from '@/components/BackToTop.vue'
 
 const route = useRoute()
 const isAdminRoute = computed(() => route.path.startsWith('/admin'))
+const isAuthRoute = computed(() => route.name === 'login' || route.name === 'register')
 </script>
 
 <template>
   <RouterView v-if="isAdminRoute" />
+  <template v-else-if="isAuthRoute">
+    <RouterView v-slot="{ Component }">
+      <Transition name="fade" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
+  </template>
   <template v-else>
     <AppHeader />
     <main class="app-shell">

@@ -1,6 +1,7 @@
 import { request } from './http'
 import type {
   ArticleListItem,
+  ChangePasswordReq,
   FollowAction,
   FollowStats,
   PageResult,
@@ -48,6 +49,14 @@ export function getUserProfile(userId: number) {
 export function updateCurrentUserProfile(data: UserProfileUpdateReq) {
   return request<void>({
     url: '/user/profile',
+    method: 'put',
+    data
+  })
+}
+
+export function changePassword(data: ChangePasswordReq) {
+  return request<void>({
+    url: '/user/password',
     method: 'put',
     data
   })

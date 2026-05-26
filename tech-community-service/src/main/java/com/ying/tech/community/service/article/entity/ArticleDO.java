@@ -55,6 +55,9 @@ public class ArticleDO extends BaseDO implements Serializable {
     /** 文章收藏数。 */
     private Integer collectionCount;
 
+    /** AI审核不通过原因。 */
+    private String rejectReason;
+
     @TableLogic
     private Integer deleted;
 }

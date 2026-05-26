@@ -16,4 +16,8 @@ public class ArticlePublishMessage implements Serializable {
      * 新增：发文的准确时间戳，供 Redis ZSet 排行榜使用
      */
     private Long publishTime;
+    /**
+     * AI审核不通过原因，仅在审核不通过时传递
+     */
+    private String reason;
 }

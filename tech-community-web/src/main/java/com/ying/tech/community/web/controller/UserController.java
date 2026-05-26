@@ -6,6 +6,7 @@ import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
+import com.ying.tech.community.service.user.req.ChangePasswordReq;
 import com.ying.tech.community.service.user.req.UserProfileUpdateReq;
 import com.ying.tech.community.service.user.req.UserSaveReq;
 import com.ying.tech.community.service.user.service.UserService;
@@ -57,6 +58,14 @@ public class UserController {
     @GetMapping("/{userId}/profile")
     public Result<UserProfileVO> getUserProfile(@PathVariable Long userId) {
         return Result.success(userService.getUserProfile(userId));
+    }
+
+    @SaCheckLogin
+    @PutMapping("/password")
+    public Result<Void> changePassword(@RequestBody ChangePasswordReq req) {
+        Long userId = ReqInfoContext.getReqInfo().getUserId();
+        userService.changePassword(userId, req);
+        return Result.success();
     }
 
     @SaCheckLogin

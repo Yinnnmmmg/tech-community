@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Search } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -63,28 +62,6 @@ async function runSearch(targetPage = page.value) {
 
 <template>
   <section class="search-page">
-    <div class="search-box surface">
-      <div>
-        <h1 class="page-title">搜索文章</h1>
-        <p>输入关键词，查找标题和正文中相关的技术内容。</p>
-      </div>
-      <div class="search-box__form">
-        <el-input
-          v-model="keyword"
-          size="large"
-          placeholder="输入关键词"
-          clearable
-          @keyup.enter="runSearch(1)"
-        >
-          <template #prefix><Search :size="18" /></template>
-        </el-input>
-        <el-button type="primary" size="large" class="icon-button" @click="runSearch(1)">
-          <Search :size="17" />
-          <span>搜索</span>
-        </el-button>
-      </div>
-    </div>
-
     <LoadingState v-if="loading" />
     <EmptyState v-else-if="keyword && !results.length" title="没有搜索结果" description="换个关键词再试试。" />
     <EmptyState v-else-if="!keyword" title="等待关键词" description="可以搜索后端、前端、AI、数据库等内容。" />
@@ -112,24 +89,6 @@ async function runSearch(targetPage = page.value) {
   gap: 16px;
 }
 
-.search-box {
-  display: grid;
-  gap: 16px;
-  padding: 22px;
-}
-
-.search-box p {
-  margin: 8px 0 0;
-  color: var(--tc-text-muted);
-  line-height: 1.6;
-}
-
-.search-box__form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
 .search-results {
   padding: 20px 22px;
 }
@@ -143,11 +102,5 @@ async function runSearch(targetPage = page.value) {
   display: flex;
   justify-content: center;
   padding-top: 18px;
-}
-
-@media (max-width: 620px) {
-  .search-box__form {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

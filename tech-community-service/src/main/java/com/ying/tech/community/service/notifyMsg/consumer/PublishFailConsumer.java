@@ -24,11 +24,12 @@ public class PublishFailConsumer {
             return;
         }
         Long authorId = message.getAuthorId();
+        String reason = message.getReason() != null ? message.getReason() : "内容不符合社区规范";
         NotifyMsgDO notifyMsg = NotifyMsgDO.builder()
                 .relatedId(message.getArticleId())           // 关联的文章ID
                 .notifyUserId(authorId)                     // 通知的用户（文章作者）
                 .operateUserId(authorId)                    // 操作的用户（文章作者）
-                .msg("您的文章审核未通过")                        // 通知消息内容
+                .msg("您的文章审核未通过，原因：" + reason)            // 通知消息内容，包含AI审核不通过的具体原因
                 .type(NotifyMsgConstants.Type.SYSTEM)        // 通知类型：系统通知
                 .state(NotifyMsgConstants.State.UNREAD)      // 通知状态：未读
                 .build();

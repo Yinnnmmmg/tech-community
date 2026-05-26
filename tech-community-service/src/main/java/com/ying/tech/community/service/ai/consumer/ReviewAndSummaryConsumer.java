@@ -137,8 +137,11 @@ public class ReviewAndSummaryConsumer {
             if (!result.isSafe()) {
                 UpdateWrapper<ArticleDO> updateWrapper = new UpdateWrapper<ArticleDO>()
                         .eq("id", message.getArticleId())
-                        .set("status", PublishStatusConstants.REJECTED);
+                        .set("status", PublishStatusConstants.REJECTED)
+                        .set("reject_reason", result.reason());
                 articleMapper.update(updateWrapper);
+                // 将审核不通过原因传递给通知消费者
+                message.setReason(result.reason());
                 rabbitTemplate.convertAndSend("notify.direct", "notify.publish.fail", message);
                 channel.basicAck(deliveryTag, false);
                 return;
