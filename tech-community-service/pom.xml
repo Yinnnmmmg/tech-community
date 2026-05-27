@@ -31,11 +31,11 @@
             <version>3.17.4</version>
         </dependency>
 
-        <!-- 阿里云短信服务 -->
+        <!-- 阿里云号码认证服务 - 短信认证 -->
         <dependency>
             <groupId>com.aliyun</groupId>
-            <artifactId>dysmsapi20170525</artifactId>
-            <version>2.0.24</version>
+            <artifactId>dypnsapi20170525</artifactId>
+            <version>2.0.0</version>
         </dependency>
 
         <dependency>

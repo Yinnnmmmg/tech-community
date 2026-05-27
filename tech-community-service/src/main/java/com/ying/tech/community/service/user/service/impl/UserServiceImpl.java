@@ -176,10 +176,6 @@ public class UserServiceImpl implements UserService {
         userInfo.setDeleted(0);
         userInfoMapper.insert(userInfo);
 
-        if (isPhoneReg) {
-            smsVerificationService.consumeCode(req.getPhone());
-        }
-
         return user.getId();
     }
 
@@ -234,11 +230,6 @@ public class UserServiceImpl implements UserService {
         }
 
         StpUtil.login(user.getId());
-
-        if (StringUtils.hasText(smsCode)) {
-            smsVerificationService.consumeCode(phone);
-        }
-
         return StpUtil.getTokenValue();
     }
 

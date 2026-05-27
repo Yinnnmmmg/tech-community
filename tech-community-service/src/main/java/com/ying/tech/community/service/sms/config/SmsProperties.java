@@ -10,4 +10,5 @@ public class SmsProperties {
     private String accessKeySecret;
     private String signName;
     private String templateCode;
+    private String templateParam = "{\"code\":\"##code##\",\"min\":\"5\"}";
 }

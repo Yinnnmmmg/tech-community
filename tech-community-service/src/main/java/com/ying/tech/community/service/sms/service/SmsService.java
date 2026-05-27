@@ -1,74 +1,86 @@
 package com.ying.tech.community.service.sms.service;
 
-import com.aliyun.dysmsapi20170525.Client;
-import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
+import com.aliyun.dypnsapi20170525.Client;
+import com.aliyun.dypnsapi20170525.models.CheckSmsVerifyCodeRequest;
+import com.aliyun.dypnsapi20170525.models.CheckSmsVerifyCodeResponse;
+import com.aliyun.dypnsapi20170525.models.SendSmsVerifyCodeRequest;
+import com.aliyun.dypnsapi20170525.models.SendSmsVerifyCodeResponse;
+import com.aliyun.teautil.models.RuntimeOptions;
 import com.ying.tech.community.core.exception.BusinessException;
 import com.ying.tech.community.core.exception.StatusEnum;
+import com.ying.tech.community.service.sms.config.SmsProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.security.SecureRandom;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
 public class SmsService {
-    private static final String CODE_KEY_PREFIX = "tech-community:sms:code:";
     private static final String RATE_KEY_PREFIX = "tech-community:sms:rate:";
-    private static final int CODE_TTL = 5; // 分钟
     private static final int RATE_TTL = 60; // 秒
-    private static final int CODE_LENGTH = 6;
 
     @Autowired
     private Client smsClient;
     @Autowired
-    private com.ying.tech.community.service.sms.config.SmsProperties smsProperties;
+    private SmsProperties smsProperties;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    private final SecureRandom secureRandom = new SecureRandom();
-
     public void sendCode(String phone) {
+        // 限流
         String rateKey = RATE_KEY_PREFIX + phone;
         Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(rateKey, "1", RATE_TTL, TimeUnit.SECONDS);
         if (locked == null || !locked) {
             throw new BusinessException(StatusEnum.SMS_RATE_LIMITED);
         }
 
-        String code = generateCode();
-        String codeKey = CODE_KEY_PREFIX + phone;
-        stringRedisTemplate.opsForValue().set(codeKey, code, CODE_TTL, TimeUnit.MINUTES);
-
+        String outId = UUID.randomUUID().toString().replace("-", "");
         try {
-            SendSmsRequest sendSmsRequest = new SendSmsRequest()
-                    .setPhoneNumbers(phone)
+            SendSmsVerifyCodeRequest request = new SendSmsVerifyCodeRequest()
+                    .setPhoneNumber(phone)
                     .setSignName(smsProperties.getSignName())
                     .setTemplateCode(smsProperties.getTemplateCode())
-                    .setTemplateParam("{\"code\":\"" + code + "\"}");
-            smsClient.sendSms(sendSmsRequest);
+                    .setTemplateParam(smsProperties.getTemplateParam())
+                    .setOutId(outId);
+
+            RuntimeOptions runtime = new RuntimeOptions();
+            SendSmsVerifyCodeResponse response = smsClient.sendSmsVerifyCodeWithOptions(request, runtime);
+
+            if (!"OK".equals(response.getBody().getCode())) {
+                log.error("send sms failed, phone={}, message={}", phone, response.getBody().getMessage());
+                throw new BusinessException(StatusEnum.SMS_SEND_FAILED);
+            }
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("send sms failed, phone={}", phone, e);
-            // 发送失败时删除验证码缓存，避免无效数据
-            stringRedisTemplate.delete(codeKey);
+            log.error("send sms error, phone={}", phone, e);
             throw new BusinessException(StatusEnum.SMS_SEND_FAILED);
         }
     }
 
-    public String getCachedCode(String phone) {
-        return stringRedisTemplate.opsForValue().get(CODE_KEY_PREFIX + phone);
-    }
+    public boolean verifyCode(String phone, String code) {
+        try {
+            CheckSmsVerifyCodeRequest request = new CheckSmsVerifyCodeRequest()
+                    .setPhoneNumber(phone)
+                    .setVerifyCode(code);
 
-    public void consumeCode(String phone) {
-        stringRedisTemplate.delete(CODE_KEY_PREFIX + phone);
-    }
+            RuntimeOptions runtime = new RuntimeOptions();
+            CheckSmsVerifyCodeResponse response = smsClient.checkSmsVerifyCodeWithOptions(request, runtime);
 
-    private String generateCode() {
-        StringBuilder sb = new StringBuilder(CODE_LENGTH);
-        for (int i = 0; i < CODE_LENGTH; i++) {
-            sb.append(secureRandom.nextInt(10));
+            String resultCode = response.getBody().getCode();
+            if ("OK".equals(resultCode)) {
+                return true;
+            }
+            log.warn("sms code verify failed, phone={}, resultCode={}, message={}",
+                    phone, resultCode, response.getBody().getMessage());
+            return false;
+        } catch (Exception e) {
+            log.error("check sms code error, phone={}", phone, e);
+            return false;
         }
-        return sb.toString();
     }
 }

@@ -12,13 +12,8 @@ public class SmsVerificationService {
     private SmsService smsService;
 
     public void verifyCode(String phone, String code) {
-        String cachedCode = smsService.getCachedCode(phone);
-        if (cachedCode == null || !cachedCode.equals(code)) {
+        if (!smsService.verifyCode(phone, code)) {
             throw new BusinessException(StatusEnum.SMS_CODE_ERROR);
         }
-    }
-
-    public void consumeCode(String phone) {
-        smsService.consumeCode(phone);
     }
 }
