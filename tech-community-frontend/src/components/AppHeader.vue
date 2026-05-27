@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { Bell, Bot, CircleUserRound, Home, LayoutGrid, LogIn, LogOut, PenLine, Search, Users } from 'lucide-vue-next'
+import { Bell, Bot, Home, LayoutGrid, LogIn, LogOut, PenLine, Search, Users } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import { useAuthStore } from '@/stores/authStore'
 import { useNotifyStore } from '@/stores/notifyStore'
-import { useUiStore } from '@/stores/uiStore'
 
 const authStore = useAuthStore()
 const notifyStore = useNotifyStore()
-const uiStore = useUiStore()
-const { showCategoryNav, toggleCategoryNav } = uiStore
 const router = useRouter()
 const route = useRoute()
 
@@ -77,14 +74,14 @@ function submitSearch() {
       </RouterLink>
 
       <nav class="nav" aria-label="主导航">
-        <RouterLink :to="{ name: 'home' }" class="nav__item">
+        <RouterLink :to="{ name: 'home' }" class="nav__item" :class="{ 'nav__item--dimmed': isFollowingTab }">
           <Home :size="17" />
           <span>首页</span>
         </RouterLink>
-        <button type="button" class="nav__item" :class="{ 'nav__item--active': showCategoryNav }" @click="toggleCategoryNav()">
+        <RouterLink :to="{ name: 'category', params: { id: 1 } }" class="nav__item">
           <LayoutGrid :size="17" />
           <span>分类</span>
-        </button>
+        </RouterLink>
         <button type="button" class="nav__item" :class="{ 'nav__item--active': isFollowingTab }" @click="toggleFollowingTab">
           <Users :size="17" />
           <span>关注</span>
@@ -96,10 +93,6 @@ function submitSearch() {
         <RouterLink :to="{ name: 'ai-chat' }" class="nav__item">
           <Bot :size="17" />
           <span>AI 助手</span>
-        </RouterLink>
-        <RouterLink :to="profileRoute" class="nav__item">
-          <CircleUserRound :size="17" />
-          <span>个人主页</span>
         </RouterLink>
         <RouterLink :to="{ name: 'notifications' }" class="nav__item" @click="notifyStore.markSystemAsRead()">
           <span class="nav__icon-wrap">
@@ -232,6 +225,10 @@ function submitSearch() {
   width: calc(100% - 24px);
 }
 
+.nav__item--dimmed.router-link-active::after {
+  width: 0;
+}
+
 .nav__badge {
   position: absolute;
   top: -4px;
@@ -278,6 +275,10 @@ button.nav__item {
 
 .nav__item--active {
   color: var(--tc-brand) !important;
+}
+
+.nav__item--active::after {
+  width: calc(100% - 24px);
 }
 
 .topbar-search {

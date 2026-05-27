@@ -135,9 +135,15 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
      */
     private ArticleDO getApprovedArticle(Long articleId) {
         ArticleDO article = articleMapper.selectById(articleId);
-        if (article == null || !java.util.Objects.equals(article.getStatus(), PublishStatusConstants.APPROVED)) {
-            log.warn("article not approved, articleId={}", articleId);
+        if (article == null) {
             throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+        }
+        if (!java.util.Objects.equals(article.getStatus(), PublishStatusConstants.APPROVED)) {
+            Long currentUserId = ReqInfoContext.getReqInfo() != null ? ReqInfoContext.getReqInfo().getUserId() : null;
+            if (!java.util.Objects.equals(article.getUserId(), currentUserId)) {
+                log.warn("article not approved, articleId={}", articleId);
+                throw new BusinessException(StatusEnum.PARAM_ILLEGAL);
+            }
         }
         return article;
     }

@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+import type { NotifyMessage } from '@/api/types'
 import { getMyFollowNotify, getMySystemNotify, getUnreadCount, markNotifyRead } from '@/api/notify'
 
 export const useNotifyStore = defineStore('notify', () => {
-  const systemMessages = ref<string[]>([])
-  const followMessages = ref<string[]>([])
+  const systemMessages = ref<NotifyMessage[]>([])
+  const followMessages = ref<NotifyMessage[]>([])
   const loading = ref(false)
 
   /** 导航栏红点显示的未读数量（由后端统计，基于 state=UNREAD） */

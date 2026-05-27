@@ -2,21 +2,17 @@
 import { Bell, Flame, Sparkles, Star, Trophy } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 
-import { listArticles, listCategories } from '@/api/article'
-import type { ArticleCategory, ArticleListItem } from '@/api/types'
+import { listArticles } from '@/api/article'
+import type { ArticleListItem } from '@/api/types'
 import ArticleCard from '@/components/ArticleCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
-import { useUiStore } from '@/stores/uiStore'
 
-const router = useRouter()
 const route = useRoute()
-const { showCategoryNav } = useUiStore()
 
 const articles = ref<ArticleListItem[]>([])
-const categories = ref<ArticleCategory[]>([])
 const nextCursor = ref<number | null>(1)
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -37,13 +33,13 @@ const hotArticles = computed(() =>
 const topAuthors = computed(() => {
   const authorMap = new Map<string, { authorId: string; authorName: string; totalScore: number }>()
   for (const article of articles.value) {
-    const key = article.authorId || article.authorName || 'unknown'
+    const key = String(article.authorId || article.authorName || 'unknown')
     const existing = authorMap.get(key)
     if (existing) {
       existing.totalScore += article.likeCount + article.commentCount + article.collectionCount
     } else {
       authorMap.set(key, {
-        authorId: article.authorId || '',
+        authorId: String(article.authorId || ''),
         authorName: article.authorName || '社区作者',
         totalScore: article.likeCount + article.commentCount + article.collectionCount
       })
@@ -64,7 +60,6 @@ onMounted(() => {
   } else {
     loadFirstPage()
   }
-  loadCategoryList()
 })
 
 watch(() => route.query.tab, (newTab) => {
@@ -85,14 +80,6 @@ async function loadFirstPage() {
     ElMessage.error(error instanceof Error ? error.message : '文章加载失败')
   } finally {
     loading.value = false
-  }
-}
-
-async function loadCategoryList() {
-  try {
-    categories.value = await listCategories()
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '分类加载失败')
   }
 }
 
@@ -139,14 +126,6 @@ async function loadMore() {
   }
 }
 
-function openCategory(category: ArticleCategory | null) {
-  if (!category) {
-    router.push({ name: 'home' })
-    return
-  }
-  router.push({ name: 'category', params: { id: category.id } })
-}
-
 function hotScore(article: ArticleListItem) {
   return article.likeCount * 3 + article.collectionCount * 2 + article.commentCount
 }
@@ -155,22 +134,8 @@ function hotScore(article: ArticleListItem) {
 
 <template>
   <div class="home-view">
-    <section class="home-hero">
-      <div v-show="showCategoryNav" class="home-nav">
-        <div class="home-nav__categories" aria-label="文章分类">
-          <button class="category-pill" :class="{ active: !followingMode }" @click="openCategory(null)">推荐</button>
-          <button
-            v-for="item in categories"
-            :key="item.id"
-            class="category-pill"
-            @click="openCategory(item)"
-          >
-            {{ item.name }}
-          </button>
-        </div>
-      </div>
-
-      <section v-if="!followingMode && featuredArticles.length" class="recommend">
+    <section v-if="!followingMode && featuredArticles.length" class="home-hero">
+      <section class="recommend">
         <div class="recommend__header">
           <Star :size="18" />
           <h2>社区推荐</h2>
@@ -237,42 +202,68 @@ function hotScore(article: ArticleListItem) {
             <p>欢迎来到 Tech Community。分享问题、经验和方案，让好内容更容易被看见。</p>
           </section>
 
-          <section class="sidebar-card">
-            <div class="sidebar-card__title">
-              <Flame :size="18" />
-              <h2>文章榜</h2>
-            </div>
-            <div v-if="hotArticles.length" class="hot-list">
-              <RouterLink
-                v-for="(item, index) in hotArticles"
-                :key="item.articleId"
-                :to="{ name: 'article-detail', params: { id: item.articleId } }"
-                class="hot-list__item"
-              >
-                <span>{{ index + 1 }}</span>
-                <strong>{{ item.title }}</strong>
-              </RouterLink>
-            </div>
-            <p v-else class="sidebar-muted">暂无热门内容</p>
-          </section>
-
-          <section class="sidebar-card">
-            <div class="sidebar-card__title">
-              <Trophy :size="18" />
-              <h2>作者榜</h2>
-            </div>
-            <div v-if="topAuthors.length" class="hot-list">
-              <div
-                v-for="(author, index) in topAuthors"
-                :key="author.authorId || index"
-                class="hot-list__item"
-              >
-                <span>{{ index + 1 }}</span>
-                <strong>{{ author.authorName }}</strong>
+          <template v-if="!followingMode">
+            <section class="sidebar-card">
+              <div class="sidebar-card__title">
+                <Flame :size="18" />
+                <h2>文章榜</h2>
               </div>
-            </div>
-            <p v-else class="sidebar-muted">暂无作者数据</p>
-          </section>
+              <div v-if="hotArticles.length" class="hot-list">
+                <RouterLink
+                  v-for="(item, index) in hotArticles"
+                  :key="item.articleId"
+                  :to="{ name: 'article-detail', params: { id: item.articleId } }"
+                  class="hot-list__item"
+                >
+                  <span>{{ index + 1 }}</span>
+                  <strong>{{ item.title }}</strong>
+                </RouterLink>
+              </div>
+              <p v-else class="sidebar-muted">暂无热门内容</p>
+            </section>
+
+            <section class="sidebar-card">
+              <div class="sidebar-card__title">
+                <Trophy :size="18" />
+                <h2>作者榜</h2>
+              </div>
+              <div v-if="topAuthors.length" class="hot-list">
+                <div
+                  v-for="(author, index) in topAuthors"
+                  :key="author.authorId || index"
+                  class="hot-list__item"
+                >
+                  <span>{{ index + 1 }}</span>
+                  <RouterLink :to="`/users/${author.authorId}`" class="author-link">{{ author.authorName }}</RouterLink>
+                </div>
+              </div>
+              <p v-else class="sidebar-muted">暂无作者数据</p>
+            </section>
+          </template>
+          <template v-else>
+            <section class="sidebar-card ad-card">
+              <div class="ad-placeholder">
+                <div class="ad-label">广告</div>
+                <div class="ad-content">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                  <p>广告位招租</p>
+                  <span>如需投放广告请联系管理员</span>
+                  <span>QQ：3221388136</span>
+                </div>
+              </div>
+            </section>
+            <section class="sidebar-card ad-card">
+              <div class="ad-placeholder">
+                <div class="ad-label">广告</div>
+                <div class="ad-content">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                  <p>广告位招租</p>
+                  <span>如需投放广告请联系管理员</span>
+                  <span>QQ：3221388136</span>
+                </div>
+              </div>
+            </section>
+          </template>
 
           <section class="sidebar-card ad-card">
             <div class="ad-placeholder">
@@ -309,57 +300,6 @@ function hotScore(article: ArticleListItem) {
   background: rgba(255, 255, 255, 0.88);
   display: grid;
   gap: 0;
-}
-
-.home-nav {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-left: calc(-50vw + 50%);
-  margin-right: calc(-50vw + 50%);
-  padding: 14px 16px;
-  padding-left: calc(50vw - 50% + 16px);
-  padding-right: calc(50vw - 50% + 16px);
-  background: linear-gradient(180deg, rgba(220, 228, 242, 0.55), rgba(235, 240, 248, 0.35));
-  border-radius: 0;
-}
-
-.home-nav__categories {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-  overflow-x: auto;
-}
-
-.category-pill {
-  flex: 0 0 auto;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: #3d4654;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition:
-    color var(--tc-duration) var(--tc-ease),
-    background var(--tc-duration) var(--tc-ease);
-}
-
-.category-pill:hover {
-  color: var(--tc-brand);
-  background: var(--tc-brand-soft);
-}
-
-.category-pill.active {
-  color: var(--tc-brand);
-  background: var(--tc-brand-soft);
-}
-
-.category-pill:active {
-  transform: scale(0.97);
 }
 
 .recommend {
@@ -714,6 +654,23 @@ function hotScore(article: ArticleListItem) {
 }
 
 .hot-list__item:hover strong {
+  color: var(--tc-brand);
+}
+
+.author-link {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: #424b59;
+  text-decoration: none;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  transition: color var(--tc-duration) var(--tc-ease);
+}
+
+.author-link:hover {
   color: var(--tc-brand);
 }
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import {
+  Briefcase,
   CalendarDays,
   Edit3,
   Lock,
-  MapPin,
   UserMinus,
   UserPlus,
   Users
@@ -354,7 +354,7 @@ function handleEditPhotoError() {
             <el-tag v-if="profile.userRole === 1" type="warning" effect="plain">管理员</el-tag>
           </div>
           <p v-if="profile.position || profile.company" class="profile-subtitle">
-            <MapPin :size="16" />
+            <Briefcase :size="16" />
             <span>{{ [profile.position, profile.company].filter(Boolean).join(' · ') }}</span>
           </p>
           <p class="profile-bio">{{ profile.profile || '这个人很低调，还没写个人介绍。' }}</p>

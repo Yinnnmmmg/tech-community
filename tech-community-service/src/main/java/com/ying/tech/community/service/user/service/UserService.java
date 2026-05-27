@@ -4,6 +4,8 @@ import com.ying.tech.community.core.common.PageResult;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.req.ChangePasswordReq;
+import com.ying.tech.community.service.user.req.PhoneLoginReq;
+import com.ying.tech.community.service.user.req.SendSmsReq;
 import com.ying.tech.community.service.user.req.UserProfileUpdateReq;
 import com.ying.tech.community.service.user.req.UserSaveReq;
 import com.ying.tech.community.service.user.vo.FollowActionVO;
@@ -15,9 +17,15 @@ import com.ying.tech.community.service.user.vo.UserProfileVO;
 public interface UserService {
     UserDO getByUsername(String username);
 
+    UserDO getByPhone(String phone);
+
     Long register(UserSaveReq req);
 
     String login(String username, String password);
+
+    String loginByPhone(String phone, String password, String smsCode);
+
+    void sendSmsCode(String phone);
 
     UserDO getUserInfo(Long userId);
 

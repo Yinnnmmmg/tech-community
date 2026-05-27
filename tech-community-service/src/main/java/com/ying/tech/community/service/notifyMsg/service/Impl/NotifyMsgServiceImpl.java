@@ -6,10 +6,13 @@ import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.notifyMsg.entity.NotifyMsgDO;
 import com.ying.tech.community.service.notifyMsg.repository.mapper.NotifyMsgMapper;
 import com.ying.tech.community.service.notifyMsg.service.NotifyMsgService;
+import com.ying.tech.community.service.notifyMsg.vo.NotifyMsgVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,7 +29,7 @@ public class NotifyMsgServiceImpl implements NotifyMsgService {
      * 查询当前用户的系统消息。
      */
     @Override
-    public List<String> getMySystemNotify() {
+    public List<NotifyMsgVO> getMySystemNotify() {
         return getMyNotifyByType(NotifyMsgConstants.Type.SYSTEM);
     }
 
@@ -34,7 +37,7 @@ public class NotifyMsgServiceImpl implements NotifyMsgService {
      * 查询当前用户的关注通知消息。
      */
     @Override
-    public List<String> getMyFollowNotify() {
+    public List<NotifyMsgVO> getMyFollowNotify() {
         return getMyNotifyByType(NotifyMsgConstants.Type.FOLLOW);
     }
 
@@ -68,20 +71,25 @@ public class NotifyMsgServiceImpl implements NotifyMsgService {
     }
 
     /**
-     * 按消息类型查询当前用户的消息内容列表。
+     * 按消息类型查询当前用户的消息列表（含时间）。
      */
-    private List<String> getMyNotifyByType(Integer type) {
+    private List<NotifyMsgVO> getMyNotifyByType(Integer type) {
         Long userId = ReqInfoContext.getReqInfo().getUserId();
         QueryWrapper<NotifyMsgDO> wrapper = new QueryWrapper<NotifyMsgDO>()
-                .select("msg")
+                .select("msg", "create_time")
                 .eq("notify_user_id", userId)
                 .eq("type", type)
                 .orderByDesc("create_time");
 
-        // 仅拉取 msg 字段，减少无关列映射。
         return notifyMsgMapper.selectMaps(wrapper)
                 .stream()
-                .map(map -> (String) map.get("msg"))
+                .map(map -> {
+                    Timestamp ts = (Timestamp) map.get("create_time");
+                    return NotifyMsgVO.builder()
+                        .msg((String) map.get("msg"))
+                        .createTime(ts != null ? ts.toLocalDateTime() : null)
+                        .build();
+                })
                 .collect(Collectors.toList());
     }
 }

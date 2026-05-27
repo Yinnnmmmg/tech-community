@@ -1,14 +1,15 @@
+import type { NotifyMessage } from './types'
 import { request } from './http'
 
 export function getMySystemNotify() {
-  return request<string[]>({
+  return request<NotifyMessage[]>({
     url: '/Notify/MySystemNotify',
     method: 'get'
   })
 }
 
 export function getMyFollowNotify() {
-  return request<string[]>({
+  return request<NotifyMessage[]>({
     url: '/Notify/MyFollowNotify',
     method: 'get'
   })

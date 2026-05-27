@@ -23,8 +23,10 @@ import com.ying.tech.community.service.comment.vo.CommentListItemVO;
 import com.ying.tech.community.service.comment.vo.CommentReplyPageVO;
 import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.entity.UserFootDO;
+import com.ying.tech.community.service.user.entity.UserInfoDO;
 import com.ying.tech.community.service.user.message.RedisLikeToDBMessage;
 import com.ying.tech.community.service.user.repository.mapper.UserFootMapper;
+import com.ying.tech.community.service.user.repository.mapper.UserInfoMapper;
 import com.ying.tech.community.service.user.repository.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
@@ -65,6 +67,8 @@ public class CommentServiceImpl implements CommentService {
     private ArticleMapper articleMapper;
     @Autowired
     private UserMapper userMapper;
+    @Autowired
+    private UserInfoMapper userInfoMapper;
     @Autowired
     private UserFootMapper userFootMapper;
     @Autowired
@@ -464,6 +468,7 @@ public class CommentServiceImpl implements CommentService {
             }
         }
         Map<Long, String> usernameMap = loadUsernameMap(userIds);
+        Map<Long, String> photoMap = loadPhotoMap(userIds);
 
         List<CommentListItemVO> records = new ArrayList<>(commentDOList.size());
         for (CommentDO commentDO : commentDOList) {
@@ -472,6 +477,7 @@ public class CommentServiceImpl implements CommentService {
             itemVO.setArticleId(commentDO.getArticleId());
             itemVO.setUserId(commentDO.getUserId());
             itemVO.setUsername(usernameMap.get(commentDO.getUserId()));
+            itemVO.setPhoto(photoMap.get(commentDO.getUserId()));
             itemVO.setContent(commentDO.getContent());
             itemVO.setStatus(commentDO.getStatus());
             itemVO.setRejectReason(commentDO.getRejectReason());
@@ -485,6 +491,32 @@ public class CommentServiceImpl implements CommentService {
             records.add(itemVO);
         }
         return records;
+    }
+
+    /**
+     * 批量加载用户头像映射。
+     */
+    private Map<Long, String> loadPhotoMap(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> validIds = userIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (validIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<UserInfoDO> userInfoList = userInfoMapper.selectList(
+                new QueryWrapper<UserInfoDO>().in("user_id", validIds));
+        if (userInfoList == null || userInfoList.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, String> photoMap = new HashMap<>();
+        for (UserInfoDO userInfo : userInfoList) {
+            photoMap.put(userInfo.getUserId(), userInfo.getPhoto());
+        }
+        return photoMap;
     }
 
     /**

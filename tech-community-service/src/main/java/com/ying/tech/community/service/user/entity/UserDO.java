@@ -21,6 +21,8 @@ public class UserDO extends BaseDO implements Serializable {
 
     private String username;
 
+    private String phone;
+
     private String password;
 
     private Integer loginType;

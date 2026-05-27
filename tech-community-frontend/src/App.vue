@@ -24,7 +24,9 @@ const isAuthRoute = computed(() => route.name === 'login' || route.name === 'reg
     <main class="app-shell">
       <RouterView v-slot="{ Component }">
         <Transition name="fade" mode="out-in">
-          <component :is="Component" />
+          <KeepAlive :include="['HomeView', 'CategoryView']">
+            <component :is="Component" />
+          </KeepAlive>
         </Transition>
       </RouterView>
     </main>

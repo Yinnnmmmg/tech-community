@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router'
 import { deleteComment, likeComment, listArticleComments, listCommentReplies, publishComment } from '@/api/comment'
 import type { CommentListItem } from '@/api/types'
 import { useAuthStore } from '@/stores/authStore'
+import { resolveAssetUrl } from '@/utils/asset'
 
 const props = defineProps<{
   articleId: number
@@ -126,6 +127,10 @@ function ensureLogin() {
   router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
   return false
 }
+
+function getAvatarUrl(photo: string | undefined) {
+  return resolveAssetUrl(photo) || ''
+}
 </script>
 
 <template>
@@ -143,6 +148,7 @@ function ensureLogin() {
         maxlength="800"
         show-word-limit
         placeholder="写下你的评论"
+        @keydown.enter.exact.prevent="submitTopComment"
       />
       <div class="split-actions">
         <el-button type="primary" class="icon-button" @click="submitTopComment">
@@ -160,6 +166,15 @@ function ensureLogin() {
     <div v-else class="comment-list">
       <article v-for="item in comments" :key="item.commentId" class="comment-item">
         <div class="comment-item__head">
+          <img
+            v-if="item.photo"
+            class="comment-avatar"
+            :src="getAvatarUrl(item.photo)"
+            :alt="item.username"
+          />
+          <span v-else class="comment-avatar comment-avatar--default">
+            {{ (item.username || '匿')[0] }}
+          </span>
           <RouterLink class="comment-user-link" :to="{ name: 'user-profile', params: { userId: item.userId } }">
             {{ item.username || '匿名用户' }}
           </RouterLink>
@@ -191,6 +206,15 @@ function ensureLogin() {
           <div v-if="replies[item.commentId]?.length" class="reply-list">
             <div v-for="reply in replies[item.commentId]" :key="reply.commentId" class="reply-item">
               <div class="reply-meta">
+                <img
+                  v-if="reply.photo"
+                  class="comment-avatar"
+                  :src="getAvatarUrl(reply.photo)"
+                  :alt="reply.username"
+                />
+                <span v-else class="comment-avatar comment-avatar--default">
+                  {{ (reply.username || '匿')[0] }}
+                </span>
                 <RouterLink class="comment-user-link" :to="{ name: 'user-profile', params: { userId: reply.userId } }">
                   {{ reply.username || '匿名用户' }}
                 </RouterLink>
@@ -231,6 +255,7 @@ function ensureLogin() {
             maxlength="500"
             show-word-limit
             :placeholder="`回复 ${item.username || '这条评论'}`"
+            @keydown.enter.exact.prevent="submitReply(item)"
           />
           <el-button type="primary" class="icon-button" @click="submitReply(item)">
             <Send :size="15" />
@@ -296,6 +321,25 @@ function ensureLogin() {
   align-items: center;
   color: var(--tc-text-muted);
   font-size: 13px;
+}
+
+.comment-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.comment-avatar--default {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tc-brand);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  object-fit: unset;
 }
 
 .comment-user-link {

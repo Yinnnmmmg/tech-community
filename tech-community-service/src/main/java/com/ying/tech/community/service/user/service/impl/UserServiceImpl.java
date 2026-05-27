@@ -14,6 +14,8 @@ import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.article.service.ArticleService;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.notifyMsg.message.UserFollowNotifyMessage;
+import com.ying.tech.community.service.sms.service.SmsService;
+import com.ying.tech.community.service.sms.service.SmsVerificationService;
 import com.ying.tech.community.service.user.entity.UserDO;
 import com.ying.tech.community.service.user.entity.UserInfoDO;
 import com.ying.tech.community.service.user.entity.UserFootDO;
@@ -36,6 +38,7 @@ import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
@@ -87,6 +90,12 @@ public class UserServiceImpl implements UserService {
     private UserFootMapper userFootMapper;
     @Autowired
     private RabbitTemplate rabbitTemplate;
+    @Autowired
+    private SmsService smsService;
+    @Autowired
+    private SmsVerificationService smsVerificationService;
+
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     /**
      * 根据用户名查询用户。
@@ -98,27 +107,62 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * 根据手机号查询用户。
+     */
+    @Override
+    public UserDO getByPhone(String phone) {
+        return userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getPhone, phone));
+    }
+
+    /**
      * 用户注册。
      *
-     * <p>校验用户名密码、检测重名后再对密码进行 MD5 加密并写入数据库。
+     * <p>支持手机号注册（phone + smsCode）和用户名注册。密码使用 BCrypt 加密。
      */
     @Override
     public Long register(UserSaveReq req) {
-        if (!StringUtils.hasText(req.getUsername()) || !StringUtils.hasText(req.getPassword())) {
-            throw new RuntimeException("用户名或密码不能为空");
+        boolean isPhoneReg = StringUtils.hasText(req.getPhone());
+
+        if (isPhoneReg) {
+            if (!req.getPhone().matches("^1[3-9]\\d{9}$")) {
+                throw new BusinessException(StatusEnum.PHONE_FORMAT_ERROR);
+            }
+            if (!StringUtils.hasText(req.getSmsCode())) {
+                throw new RuntimeException("验证码不能为空");
+            }
+            smsVerificationService.verifyCode(req.getPhone(), req.getSmsCode());
+
+            UserDO existPhoneUser = userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
+                    .eq(UserDO::getPhone, req.getPhone()));
+            if (existPhoneUser != null) {
+                throw new BusinessException(StatusEnum.PHONE_ALREADY_REGISTERED);
+            }
+        } else {
+            if (!StringUtils.hasText(req.getUsername()) || !StringUtils.hasText(req.getPassword())) {
+                throw new RuntimeException("用户名或密码不能为空");
+            }
+            UserDO existUser = userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
+                    .eq(UserDO::getUsername, req.getUsername()));
+            if (existUser != null) {
+                throw new BusinessException(StatusEnum.USER_EXISTS);
+            }
         }
 
-        UserDO existUser = userMapper.selectOne(new LambdaQueryWrapper<UserDO>()
-                .eq(UserDO::getUsername, req.getUsername()));
-        if (existUser != null) {
-            throw new BusinessException(StatusEnum.USER_EXISTS);
+        if (!StringUtils.hasText(req.getPassword())) {
+            throw new RuntimeException("密码不能为空");
         }
 
-        String encodedPwd = DigestUtils.md5DigestAsHex(req.getPassword().getBytes(StandardCharsets.UTF_8));
+        String encodedPwd = passwordEncoder.encode(req.getPassword());
+
+        String username = isPhoneReg ? req.getPhone() : req.getUsername();
 
         UserDO user = new UserDO();
-        user.setUsername(req.getUsername());
+        user.setUsername(username);
         user.setPassword(encodedPwd);
+        if (isPhoneReg) {
+            user.setPhone(req.getPhone());
+        }
         user.setThirdAccountId(null);
         user.setLoginType(0);
         user.setUserRole(0);
@@ -127,16 +171,21 @@ public class UserServiceImpl implements UserService {
 
         UserInfoDO userInfo = new UserInfoDO();
         userInfo.setUserId(user.getId());
-        userInfo.setUsername(user.getUsername());
+        userInfo.setUsername(username);
         userInfo.setIp("{}");
         userInfo.setDeleted(0);
         userInfoMapper.insert(userInfo);
+
+        if (isPhoneReg) {
+            smsVerificationService.consumeCode(req.getPhone());
+        }
 
         return user.getId();
     }
 
     /**
-     * 用户登录并返回 Token。
+     * 用户登录并返回 Token（用户名 + 密码）。
+     * <p>先尝试 BCrypt 校验，失败时回退 MD5 兼容老用户。
      */
     @Override
     public String login(String username, String password) {
@@ -149,13 +198,77 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(StatusEnum.USER_NOT_FOUND);
         }
 
-        String inputPwdEncoded = DigestUtils.md5DigestAsHex(password.getBytes(StandardCharsets.UTF_8));
-        if (!inputPwdEncoded.equals(user.getPassword())) {
+        if (!verifyPassword(password, user.getPassword())) {
             throw new BusinessException(StatusEnum.USER_PWD_ERROR);
         }
 
         StpUtil.login(user.getId());
         return StpUtil.getTokenValue();
+    }
+
+    /**
+     * 手机号登录（双模式：密码或短信验证码）。
+     */
+    @Override
+    public String loginByPhone(String phone, String password, String smsCode) {
+        if (!StringUtils.hasText(phone)) {
+            throw new RuntimeException("手机号不能为空");
+        }
+        if (!phone.matches("^1[3-9]\\d{9}$")) {
+            throw new BusinessException(StatusEnum.PHONE_FORMAT_ERROR);
+        }
+
+        UserDO user = getByPhone(phone);
+        if (user == null) {
+            throw new BusinessException(StatusEnum.USER_NOT_FOUND);
+        }
+
+        if (StringUtils.hasText(smsCode)) {
+            smsVerificationService.verifyCode(phone, smsCode);
+        } else if (StringUtils.hasText(password)) {
+            if (!verifyPassword(password, user.getPassword())) {
+                throw new BusinessException(StatusEnum.USER_PWD_ERROR);
+            }
+        } else {
+            throw new RuntimeException("密码或验证码不能为空");
+        }
+
+        StpUtil.login(user.getId());
+
+        if (StringUtils.hasText(smsCode)) {
+            smsVerificationService.consumeCode(phone);
+        }
+
+        return StpUtil.getTokenValue();
+    }
+
+    /**
+     * 发送短信验证码。
+     */
+    @Override
+    public void sendSmsCode(String phone) {
+        if (!StringUtils.hasText(phone)) {
+            throw new RuntimeException("手机号不能为空");
+        }
+        if (!phone.matches("^1[3-9]\\d{9}$")) {
+            throw new BusinessException(StatusEnum.PHONE_FORMAT_ERROR);
+        }
+        smsService.sendCode(phone);
+    }
+
+    /**
+     * 验证密码，先尝试 BCrypt，再尝试 MD5（兼容老用户）。
+     */
+    private boolean verifyPassword(String rawPassword, String encodedPassword) {
+        if (encodedPassword == null) {
+            return false;
+        }
+        if (encodedPassword.startsWith("$2a$") || encodedPassword.startsWith("$2b$") || encodedPassword.startsWith("$2y$")) {
+            return passwordEncoder.matches(rawPassword, encodedPassword);
+        }
+        // MD5 fallback for legacy users
+        String md5 = DigestUtils.md5DigestAsHex(rawPassword.getBytes(StandardCharsets.UTF_8));
+        return md5.equals(encodedPassword);
     }
 
     /**
@@ -222,6 +335,7 @@ public class UserServiceImpl implements UserService {
         if (userInfo == null) {
             userInfo = new UserInfoDO();
             userInfo.setUserId(userId);
+            userInfo.setIp("{}");
         }
 
         userInfo.setUsername(normalizeText(req.getUsername()));
@@ -247,12 +361,10 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("密码不能为空");
         }
         UserDO user = requireUser(userId);
-        String oldPwdEncoded = DigestUtils.md5DigestAsHex(req.getOldPassword().getBytes(StandardCharsets.UTF_8));
-        if (!oldPwdEncoded.equals(user.getPassword())) {
+        if (!verifyPassword(req.getOldPassword(), user.getPassword())) {
             throw new BusinessException(StatusEnum.USER_PWD_ERROR);
         }
-        String newPwdEncoded = DigestUtils.md5DigestAsHex(req.getNewPassword().getBytes(StandardCharsets.UTF_8));
-        user.setPassword(newPwdEncoded);
+        user.setPassword(passwordEncoder.encode(req.getNewPassword()));
         userMapper.updateById(user);
     }
 

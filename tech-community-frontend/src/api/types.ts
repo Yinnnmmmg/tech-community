@@ -117,6 +117,7 @@ export interface CommentListItem {
   articleId: number
   userId: number
   username?: string
+  photo?: string
   content: string
   status?: number
   rejectReason?: string
@@ -189,6 +190,27 @@ export interface UserProfileUpdateReq {
 export interface ChangePasswordReq {
   oldPassword: string
   newPassword: string
+}
+
+export interface SendSmsReq {
+  phone: string
+}
+
+export interface PhoneLoginReq {
+  phone: string
+  password?: string
+  smsCode?: string
+}
+
+export interface RegisterReq {
+  phone: string
+  password: string
+  smsCode: string
+}
+
+export interface NotifyMessage {
+  msg: string
+  createTime: string
 }
 
 export interface Reference {

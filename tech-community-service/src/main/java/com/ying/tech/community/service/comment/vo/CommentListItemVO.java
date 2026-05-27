@@ -30,6 +30,11 @@ public class CommentListItemVO implements Serializable {
      * 评论用户名
      */
     private String username;
+
+    /**
+     * 评论用户头像
+     */
+    private String photo;
     
     /**
      * 评论内容

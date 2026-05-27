@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Flame, FolderOpen, Search } from 'lucide-vue-next'
+import { Flame, FolderOpen } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -18,8 +18,6 @@ const articles = ref<ArticleListItem[]>([])
 const nextCursor = ref<number | null>(1)
 const loading = ref(false)
 const loadingMore = ref(false)
-const keyword = ref('')
-
 const categoryId = computed(() => Number(route.params.id || 0))
 const currentCategory = computed(() => categories.value.find((item) => item.id === categoryId.value) ?? null)
 const hotArticles = computed(() =>
@@ -91,13 +89,6 @@ function openCategory(target: ArticleCategory | null) {
   router.push({ name: 'category', params: { id: target.id } })
 }
 
-function submitSearch() {
-  const q = keyword.value.trim()
-  if (q) {
-    router.push({ name: 'search', query: { q } })
-  }
-}
-
 function hotScore(article: ArticleListItem) {
   return article.likeCount * 3 + article.collectionCount * 2 + article.commentCount
 }
@@ -107,7 +98,6 @@ function hotScore(article: ArticleListItem) {
   <div class="category-view">
     <section class="category-nav surface">
       <div class="category-nav__tabs">
-        <button class="category-pill" @click="openCategory(null)">推荐</button>
         <button
           v-for="item in categories"
           :key="item.id"
@@ -117,15 +107,6 @@ function hotScore(article: ArticleListItem) {
         >
           {{ item.name }}
         </button>
-      </div>
-      <div class="category-nav__search">
-        <el-input v-model="keyword" placeholder="搜索文章" clearable @keyup.enter="submitSearch">
-          <template #prefix><Search :size="17" /></template>
-        </el-input>
-        <el-button type="primary" class="icon-button" @click="submitSearch">
-          <Search :size="16" />
-          <span>搜索</span>
-        </el-button>
       </div>
     </section>
 
@@ -155,24 +136,38 @@ function hotScore(article: ArticleListItem) {
       </section>
 
       <aside class="category-side">
-        <section class="side-card">
-          <div class="side-card__title">
-            <Flame :size="18" />
-            <h2>本分类热门</h2>
-          </div>
-          <div v-if="hotArticles.length" class="hot-list">
-            <RouterLink
-              v-for="(item, index) in hotArticles"
-              :key="item.articleId"
-              :to="{ name: 'article-detail', params: { id: item.articleId } }"
-              class="hot-list__item"
-            >
-              <span>{{ index + 1 }}</span>
-              <strong>{{ item.title }}</strong>
-            </RouterLink>
-          </div>
-          <p v-else class="muted">暂无热门内容</p>
-        </section>
+        <div class="category-side__inner">
+          <section class="sidebar-card">
+            <div class="sidebar-card__title">
+              <Flame :size="18" />
+              <h2>本分类热门</h2>
+            </div>
+            <div v-if="hotArticles.length" class="hot-list">
+              <RouterLink
+                v-for="(item, index) in hotArticles"
+                :key="item.articleId"
+                :to="{ name: 'article-detail', params: { id: item.articleId } }"
+                class="hot-list__item"
+              >
+                <span>{{ index + 1 }}</span>
+                <strong>{{ item.title }}</strong>
+              </RouterLink>
+            </div>
+            <p v-else class="sidebar-muted">暂无热门内容</p>
+          </section>
+
+          <section class="sidebar-card ad-card">
+            <div class="ad-placeholder">
+              <div class="ad-label">广告</div>
+              <div class="ad-content">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                <p>广告位招租</p>
+                <span>如需投放广告请联系管理员</span>
+                <span>QQ：3221388136</span>
+              </div>
+            </div>
+          </section>
+        </div>
       </aside>
     </div>
   </div>
@@ -185,43 +180,36 @@ function hotScore(article: ArticleListItem) {
 }
 
 .category-nav {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
+  display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 14px 20px;
 }
 
 .category-nav__tabs {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .category-pill {
   flex: 0 0 auto;
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 16px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: #3d4654;
   cursor: pointer;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
+  transition: background var(--tc-duration) var(--tc-ease), color var(--tc-duration) var(--tc-ease);
 }
 
 .category-pill:hover,
 .category-pill.active {
   color: var(--tc-brand);
   background: var(--tc-brand-soft);
-}
-
-.category-nav__search {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
 }
 
 .category-layout {
@@ -267,30 +255,113 @@ function hotScore(article: ArticleListItem) {
 }
 
 .category-side {
-  display: grid;
+  position: sticky;
+  top: 80px;
 }
 
-.side-card {
+.category-side__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100vh - 80px - 24px);
+  overflow-y: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+
+.category-side__inner::-webkit-scrollbar {
+  width: 5px;
+}
+
+.category-side__inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.category-side__inner::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+
+.category-side__inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.30);
+}
+
+.sidebar-card {
   display: grid;
+  flex-shrink: 0;
   gap: 14px;
   padding: 18px;
-  border: 1px solid var(--tc-border);
-  border-radius: 6px;
-  background: #ffffff;
+  border-radius: 16px;
+  background: var(--tc-panel);
+  backdrop-filter: var(--tc-glass-blur);
+  -webkit-backdrop-filter: var(--tc-glass-blur);
+  box-shadow: var(--tc-shadow-xs), var(--tc-shadow-glow);
 }
 
-.side-card__title {
+.sidebar-card__title {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--tc-brand);
 }
 
-.side-card__title h2 {
+.sidebar-card__title h2 {
   margin: 0;
   color: var(--tc-text-strong);
   font-size: 17px;
+  line-height: 1.35;
   letter-spacing: 0;
+}
+
+.sidebar-card p,
+.sidebar-muted {
+  margin: 0;
+  color: #5f6877;
+  line-height: 1.7;
+}
+
+.ad-card {
+  border: 1px dashed rgba(232, 101, 15, 0.25);
+  background: linear-gradient(135deg, #fef9f5, #fafbff);
+}
+
+.ad-placeholder {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+}
+
+.ad-label {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: rgba(232, 101, 15, 0.12);
+  color: var(--tc-brand);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ad-content {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 18px 0 8px;
+  color: var(--tc-text-muted);
+}
+
+.ad-content p {
+  margin: 0;
+  color: var(--tc-text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ad-content span {
+  font-size: 12px;
 }
 
 .hot-list {
@@ -309,24 +380,28 @@ function hotScore(article: ArticleListItem) {
 .hot-list__item span {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  background: #ccd1da;
-  color: #ffffff;
-  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--tc-text-muted);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .hot-list__item:nth-child(1) span {
-  background: var(--tc-brand-red);
+  background: rgba(230, 81, 81, 0.15);
+  color: var(--tc-brand-red);
 }
 
 .hot-list__item:nth-child(2) span {
-  background: var(--tc-brand);
+  background: rgba(232, 101, 15, 0.12);
+  color: var(--tc-brand);
 }
 
 .hot-list__item:nth-child(3) span {
-  background: #f59e2f;
+  background: rgba(245, 158, 47, 0.15);
+  color: #c4881f;
 }
 
 .hot-list__item strong {
@@ -340,18 +415,34 @@ function hotScore(article: ArticleListItem) {
 }
 
 .hot-list__item:hover strong {
-  color: var(--tc-brand-hover);
+  color: var(--tc-brand);
 }
 
 @media (max-width: 980px) {
-  .category-nav,
   .category-layout {
     grid-template-columns: 1fr;
+  }
+
+  .category-side {
+    display: none;
   }
 }
 
 @media (max-width: 620px) {
-  .category-nav__search,
+  .category-nav {
+    padding: 10px 14px;
+  }
+
+  .category-nav__tabs {
+    gap: 6px;
+  }
+
+  .category-pill {
+    padding: 0 12px;
+    min-height: 32px;
+    font-size: 14px;
+  }
+
   .category-hero {
     grid-template-columns: 1fr;
   }

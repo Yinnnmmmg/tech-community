@@ -40,8 +40,17 @@ export const useAuthStore = defineStore('auth', {
       saveStoredToken(token)
       this.user = await authApi.getCurrentUser()
     },
+    async loginByPhone(phone: string, password?: string, smsCode?: string) {
+      const token = await authApi.loginByPhone({ phone, password, smsCode })
+      this.token = token
+      saveStoredToken(token)
+      this.user = await authApi.getCurrentUser()
+    },
     async register(username: string, password: string) {
       return authApi.register(username, password)
+    },
+    async registerByPhone(phone: string, password: string, smsCode: string) {
+      return authApi.registerByPhone(phone, password, smsCode)
     },
     async logout() {
       try {

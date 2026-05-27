@@ -7,6 +7,8 @@ import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.core.global.ReqInfoContext;
 import com.ying.tech.community.service.article.vo.ArticleListVO;
 import com.ying.tech.community.service.user.req.ChangePasswordReq;
+import com.ying.tech.community.service.user.req.PhoneLoginReq;
+import com.ying.tech.community.service.user.req.SendSmsReq;
 import com.ying.tech.community.service.user.req.UserProfileUpdateReq;
 import com.ying.tech.community.service.user.req.UserSaveReq;
 import com.ying.tech.community.service.user.service.UserService;
@@ -39,6 +41,17 @@ public class UserController {
     @PostMapping("/login")
     public Result<String> login(@RequestParam String username, @RequestParam String password) {
         return Result.success(userService.login(username, password));
+    }
+
+    @PostMapping("/sms/send")
+    public Result<Void> sendSmsCode(@RequestBody SendSmsReq req) {
+        userService.sendSmsCode(req.getPhone());
+        return Result.success();
+    }
+
+    @PostMapping("/login/phone")
+    public Result<String> loginByPhone(@RequestBody PhoneLoginReq req) {
+        return Result.success(userService.loginByPhone(req.getPhone(), req.getPassword(), req.getSmsCode()));
     }
 
     @SaCheckLogin

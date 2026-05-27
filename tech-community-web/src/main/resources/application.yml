@@ -89,6 +89,11 @@ mybatis-plus:
       logic-delete-field: deleted
 
 app:
+  sms:
+    access-key-id: ${app.secure.sms.access-key-id}
+    access-key-secret: ${app.secure.sms.access-key-secret}
+    sign-name: ${app.secure.sms.sign-name}
+    template-code: ${app.secure.sms.template-code}
   oss:
     endpoint: ${app.secure.oss.endpoint}
     bucket: ${app.secure.oss.bucket}

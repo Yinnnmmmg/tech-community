@@ -26,6 +26,11 @@ public enum StatusEnum {
     AUTH_REQUIRED(4015, "请先登录"),
     AUTH_FORBIDDEN(4016, "无权限访问"),
     LAST_ADMIN_REQUIRED(4017, "至少需要保留一个管理员"),
+    SMS_CODE_ERROR(4018, "验证码错误或已过期"),
+    SMS_RATE_LIMITED(4019, "发送过于频繁，请稍后再试"),
+    SMS_SEND_FAILED(4020, "短信发送失败，请稍后重试"),
+    PHONE_ALREADY_REGISTERED(4021, "该手机号已被注册"),
+    PHONE_FORMAT_ERROR(4022, "手机号格式不正确"),
     FILE_UPLOAD_FAILED(5001, "文件上传失败");
 
     private final int code;

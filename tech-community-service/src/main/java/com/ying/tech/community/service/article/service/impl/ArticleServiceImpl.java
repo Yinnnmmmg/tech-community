@@ -191,8 +191,7 @@ public class ArticleServiceImpl implements ArticleService {
                 .eq("id", articleId)
                 .set("title", articleUpdateReq.getTitle())
                 .set("category_id", articleUpdateReq.getCategoryId())
-                .set("summary", null)
-                .set("picture", resolveCoverUrl(boundAttachments))
+                .set("summary", summaryFromContent(articleUpdateReq.getContent()))
                 .set("status", PublishStatusConstants.PENDING));
 
         ArticleDetailDO detail = articleDetailMapper.selectOne(new QueryWrapper<ArticleDetailDO>()
@@ -708,6 +707,19 @@ public class ArticleServiceImpl implements ArticleService {
             }
         }
         return null;
+    }
+
+    /**
+     * 从正文中提取纯文本摘要（前 200 字）。
+     */
+    private String summaryFromContent(String content) {
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        String plain = content.replaceAll("<[^>]+>", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return plain.length() > 200 ? plain.substring(0, 200) : plain;
     }
 
     private void validateCategory(Long categoryId) {

@@ -2,6 +2,7 @@ package com.ying.tech.community.web.controller;
 
 import com.ying.tech.community.core.common.Result;
 import com.ying.tech.community.service.notifyMsg.service.Impl.NotifyMsgServiceImpl;
+import com.ying.tech.community.service.notifyMsg.vo.NotifyMsgVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -23,7 +24,7 @@ public class NotifyMsgController {
      * 获取当前用户的系统消息。
      */
     @GetMapping("/MySystemNotify")
-    public Result<List<String>> getMySystemNotify() {
+    public Result<List<NotifyMsgVO>> getMySystemNotify() {
         return Result.success(notifyMsgService.getMySystemNotify());
     }
 
@@ -31,7 +32,7 @@ public class NotifyMsgController {
      * 获取当前用户的关注通知消息。
      */
     @GetMapping("/MyFollowNotify")
-    public Result<List<String>> getMyFollowNotify() {
+    public Result<List<NotifyMsgVO>> getMyFollowNotify() {
         return Result.success(notifyMsgService.getMyFollowNotify());
     }
 
