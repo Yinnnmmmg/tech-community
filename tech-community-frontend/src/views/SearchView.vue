@@ -69,7 +69,7 @@ async function runSearch(targetPage = page.value) {
       <div class="toolbar search-results__head">
         <h2 class="section-title">共找到 {{ total }} 条结果</h2>
       </div>
-      <ArticleCard v-for="item in results" :key="item.id" :article="item" />
+      <ArticleCard v-for="item in results" :key="item.id" :article="item" :search-keyword="keyword" />
       <div class="pagination">
         <el-pagination
           layout="prev, pager, next"

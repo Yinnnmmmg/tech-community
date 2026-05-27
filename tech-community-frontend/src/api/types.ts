@@ -60,11 +60,16 @@ export interface ArticleListItem {
 export interface ArticleSearchHighlight {
   id: number
   title: string
+  /** 内容摘要（纯文本，前端负责高亮） */
+  summary?: string
+  /** @deprecated ES 旧版，保留兼容 */
   highlightedTitle?: string
+  /** @deprecated ES 旧版，保留兼容 */
   highlightedContent?: string
   author?: string
   authorId?: number
   tags?: string[]
+  /** MySQL 相关性分值 */
   score?: number
   publishTime?: number
 }

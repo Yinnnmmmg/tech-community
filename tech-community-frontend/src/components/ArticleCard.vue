@@ -6,25 +6,46 @@ import type { ArticleListItem, ArticleSearchHighlight } from '@/api/types'
 
 const props = defineProps<{
   article: ArticleListItem | ArticleSearchHighlight
+  /** 搜索关键词，用于客户端高亮。仅搜索页面传入 */
+  searchKeyword?: string
 }>()
 
 function isListArticle(article: ArticleListItem | ArticleSearchHighlight): article is ArticleListItem {
   return 'articleId' in article
 }
 
+/**
+ * 客户端关键词高亮：将文本中匹配到的关键词用 {@code <em>} 标签包裹。
+ */
+function highlightText(text: string, keyword: string): string {
+  if (!keyword || !text) return text
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`(${escaped})`, 'gi')
+  return text.replace(regex, '<em>$1</em>')
+}
+
 const articleId = computed(() => (isListArticle(props.article) ? props.article.articleId : props.article.id))
 const authorId = computed(() => (isListArticle(props.article) ? props.article.authorId : props.article.authorId))
 const titleHtml = computed(() => {
+  // 优先使用旧版 ES 高亮（兼容），其次使用客户端高亮
   if ('highlightedTitle' in props.article && props.article.highlightedTitle) {
     return props.article.highlightedTitle
+  }
+  if (props.searchKeyword) {
+    return highlightText(props.article.title, props.searchKeyword)
   }
   return props.article.title
 })
 const summaryHtml = computed(() => {
+  // 优先使用旧版 ES 高亮（兼容），其次 summary，再用客户端高亮
   if ('highlightedContent' in props.article && props.article.highlightedContent) {
     return props.article.highlightedContent
   }
-  return 'summary' in props.article ? props.article.summary : ''
+  const raw = 'summary' in props.article ? props.article.summary : ''
+  if (raw && props.searchKeyword) {
+    return highlightText(raw, props.searchKeyword)
+  }
+  return raw
 })
 const authorName = computed(() => (isListArticle(props.article) ? props.article.authorName : props.article.author))
 const categoryId = computed(() => (isListArticle(props.article) ? props.article.categoryId : undefined))

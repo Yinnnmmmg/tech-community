@@ -1,7 +1,7 @@
 package com.ying.tech.community.service.article.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.ying.tech.community.service.article.entity.es.ArticleDocument;
+// [ES-OLD] import com.ying.tech.community.service.article.entity.es.ArticleDocument;
 import com.ying.tech.community.service.article.vo.ArticleSearchHighlightVO;
 
 import java.util.List;

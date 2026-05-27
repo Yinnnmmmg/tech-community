@@ -43,7 +43,7 @@ import static com.ying.tech.community.core.constants.AiConstants.ARTICLE_REVIEW_
  * <p>下游广播：审核通过的文章会广播到article.fanout交换机，触发以下消费者：
  *   - ArticlePublishTimelineConsumer: 更新Redis时间轴ZSet
  *   - ArticlePublishNotifyConsumer: 发送系统通知
- *   - ArticlePublishEsSyncConsumer: 同步数据到Elasticsearch
+ *   [ES-OLD] - ArticlePublishEsSyncConsumer: 同步数据到Elasticsearch
  *
  * <p>技术要点：
  *   - 幂等性：基于Redis的setIfAbsent实现，防止网络重试导致的重复消费

@@ -48,12 +48,13 @@
             <artifactId>spring-web</artifactId>
         </dependency>
 
-        <!-- Elasticsearch Java API Client -->
+        <!-- [ES-OLD] Elasticsearch Java API Client —— 已切换为 MySQL FULLTEXT
         <dependency>
             <groupId>co.elastic.clients</groupId>
             <artifactId>elasticsearch-java</artifactId>
             <version>8.11.1</version>
         </dependency>
+        -->
 
         <!-- Jackson dependency -->
         <dependency>
@@ -62,11 +63,13 @@
             <version>2.15.2</version>
         </dependency>
 
+        <!-- [ES-OLD] jakarta.json-api —— 仅 ES 客户端使用
         <dependency>
             <groupId>jakarta.json</groupId>
             <artifactId>jakarta.json-api</artifactId>
             <version>2.0.1</version>
         </dependency>
+        -->
 
         <!-- rabbit MQ -->
         <dependency>

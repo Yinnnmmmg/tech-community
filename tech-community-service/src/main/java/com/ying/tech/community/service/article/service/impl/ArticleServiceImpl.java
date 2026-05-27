@@ -18,7 +18,7 @@ import com.ying.tech.community.service.article.entity.ArticleDO;
 import com.ying.tech.community.service.article.entity.ArticleDetailDO;
 import com.ying.tech.community.service.article.message.ArticlePublishMessage;
 import com.ying.tech.community.service.article.message.TimelineRebuildMessage;
-import com.ying.tech.community.service.article.repository.ArticleESRepository;
+// [ES-OLD] import com.ying.tech.community.service.article.repository.ArticleESRepository;
 import com.ying.tech.community.service.article.repository.mapper.ArticleDetailMapper;
 import com.ying.tech.community.service.article.repository.mapper.ArticleMapper;
 import com.ying.tech.community.service.article.req.ArticlePostReq;
@@ -90,7 +90,7 @@ public class ArticleServiceImpl implements ArticleService {
     private final ArticleAttachmentService articleAttachmentService;
     private final ArticleCategoryService articleCategoryService;
     private final ArticleEmbeddingService articleEmbeddingService;
-    private final ArticleESRepository articleESRepository;
+    // [ES-OLD] private final ArticleESRepository articleESRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final RabbitTemplate rabbitTemplate;
     private final Executor taskExecutor;
@@ -104,7 +104,7 @@ public class ArticleServiceImpl implements ArticleService {
                               ArticleAttachmentService articleAttachmentService,
                               ArticleCategoryService articleCategoryService,
                               ArticleEmbeddingService articleEmbeddingService,
-                              ArticleESRepository articleESRepository,
+                              // [ES-OLD] ArticleESRepository articleESRepository,
                               RedisTemplate<String, Object> redisTemplate,
                               RabbitTemplate rabbitTemplate,
                               Executor taskExecutor,
@@ -117,7 +117,7 @@ public class ArticleServiceImpl implements ArticleService {
         this.articleAttachmentService = articleAttachmentService;
         this.articleCategoryService = articleCategoryService;
         this.articleEmbeddingService = articleEmbeddingService;
-        this.articleESRepository = articleESRepository;
+        // [ES-OLD] this.articleESRepository = articleESRepository;
         this.redisTemplate = redisTemplate;
         this.rabbitTemplate = rabbitTemplate;
         this.taskExecutor = taskExecutor;
@@ -742,11 +742,14 @@ public class ArticleServiceImpl implements ArticleService {
         } catch (Exception e) {
             log.error("remove article from timeline failed, articleId={}", articleId, e);
         }
+        // [ES-OLD] ES 索引清理 —— 已改为 MySQL FULLTEXT，不再需要同步清理
+        /*
         try {
             removeArticleFromSearch(articleId);
         } catch (Exception e) {
             log.error("remove article from search failed, articleId={}", articleId, e);
         }
+        */
         try {
             removeArticleFromKnowledgeBase(articleId);
         } catch (Exception e) {
@@ -771,12 +774,12 @@ public class ArticleServiceImpl implements ArticleService {
         redisTemplate.opsForZSet().remove(RedisConstants.TECH_COMMUNITY_ARTICLE_LIST, articleId.toString());
     }
 
-    /**
-     * 从 ES 检索索引中移除文章。
-     */
+    // [ES-OLD] 从 ES 检索索引中移除文章 —— 已改为 MySQL FULLTEXT，不再需要
+    /*
     private void removeArticleFromSearch(Long articleId) {
         articleESRepository.deleteById(articleId);
     }
+    */
 
     /**
      * 从知识库向量存储中移除文章。

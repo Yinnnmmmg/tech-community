@@ -47,9 +47,8 @@ public class ArticleDeadLetterConsumer {
         channel.basicAck(deliveryTag, false);
     }
 
-    /**
-     * 处理文章发布后 ES 同步死信消息。
-     */
+    // [ES-OLD] 处理文章发布后 ES 同步死信消息 —— 已改为 MySQL FULLTEXT，不再需要
+    /*
     @RabbitListener(queues = "article.publish.es.dlq")
     public void handleArticlePublishEsDead(ArticlePublishMessage message,
                                            Channel channel,
@@ -59,6 +58,7 @@ public class ArticleDeadLetterConsumer {
                 message.getArticleId(), message.getAuthorId(), message.getPublishTime());
         channel.basicAck(deliveryTag, false);
     }
+    */
 
     /**
      * 处理时间轴重建死信消息。

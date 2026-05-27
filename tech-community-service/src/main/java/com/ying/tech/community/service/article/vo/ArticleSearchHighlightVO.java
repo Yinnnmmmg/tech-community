@@ -6,7 +6,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 文章搜索高亮结果 VO
+ * 文章搜索高亮结果 VO。
+ * <p>
+ * 高亮显示改为前端实现，后端仅返回纯文本。highlightedTitle / highlightedContent 已废弃，
+ * 保留字段为兼容旧版前端，新版本请使用 title + summary + score 字段。
  */
 @Data
 @Builder
@@ -24,13 +27,20 @@ public class ArticleSearchHighlightVO {
     private String title;
 
     /**
-     * 高亮后的标题
+     * 内容摘要（纯文本，未高亮）
      */
+    private String summary;
+
+    /**
+     * 高亮后的标题（@deprecated ES 旧版，保留兼容）
+     */
+    @Deprecated
     private String highlightedTitle;
 
     /**
-     * 高亮后的内容片段（摘要）
+     * 高亮后的内容片段（@deprecated ES 旧版，保留兼容）
      */
+    @Deprecated
     private String highlightedContent;
 
     /**
@@ -49,12 +59,12 @@ public class ArticleSearchHighlightVO {
     private java.util.List<String> tags;
 
     /**
-     * 相关性分数
+     * 相关性分数（MySQL FULLTEXT 分值）
      */
     private Double score;
 
     /**
-     * 发布时间
+     * 发布时间（epoch 毫秒）
      */
     private Long publishTime;
 }

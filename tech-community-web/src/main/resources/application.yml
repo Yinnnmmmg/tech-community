@@ -73,13 +73,14 @@
         port: ${app.secure.ai.vectorstore.qdrant.port}
         collection-name: vector_store
 
-elasticsearch:
-  host: ${app.secure.elasticsearch.host}
-  port: ${app.secure.elasticsearch.port}
-  scheme: ${app.secure.elasticsearch.scheme}
-  connection-timeout: 10s
-  socket-timeout: 30s
-  connection-request-timeout: 5s
+# [ES-OLD] Elasticsearch 配置 —— 已切换为 MySQL FULLTEXT
+# elasticsearch:
+#   host: ${app.secure.elasticsearch.host}
+#   port: ${app.secure.elasticsearch.port}
+#   scheme: ${app.secure.elasticsearch.scheme}
+#   connection-timeout: 10s
+#   socket-timeout: 30s
+#   connection-request-timeout: 5s
 
 mybatis-plus:
   configuration:
